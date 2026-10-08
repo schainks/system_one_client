@@ -1,17 +1,27 @@
 defmodule SystemOneClient do
   @moduledoc """
-  Client for TypeSafe's System One API (Jev).
+  Client for System One decision models: TypeSafe Jev, Cloudflare Clef, OpenRouter's
+  decisions endpoint, and any self-hosted `/v1/systemone` server such as CLM.
 
   Ask typed questions (`noul`, `choice`, `score`) about arbitrary JSON state and get
-  probabilities back. `SystemOneClient.HTTP` talks to the API; `SystemOneClient.Stub`
-  returns canned answers for tests. Question maps follow the API shape verbatim; this
+  typed answers back with their full probability distributions. `SystemOneClient.HTTP`
+  talks to a provider (see `SystemOneClient.Provider`); `SystemOneClient.Stub` returns
+  canned answers for tests. Question maps follow the API wire shape verbatim; this
   library does not invent its own schema for them.
+
+      {:ok, answers, meta} = SystemOneClient.evaluate(state, questions, provider: :cloudflare)
+      answers["tool"].probabilities
   """
 
   alias SystemOneClient.Answer
 
   @type answers :: %{String.t() => Answer.t()}
-  @type meta :: %{model: String.t() | nil, usage: map() | nil, latency_ms: non_neg_integer()}
+  @type meta :: %{
+          optional(:provider) => atom(),
+          model: String.t() | nil,
+          usage: map() | nil,
+          latency_ms: non_neg_integer()
+        }
 
   @callback evaluate(state :: term(), questions :: map(), opts :: keyword()) ::
               {:ok, answers(), meta()} | {:error, term()}
