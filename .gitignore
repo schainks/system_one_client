@@ -1,0 +1,7 @@
+/_build/
+/deps/
+/doc/
+/cover/
+erl_crash.dump
+*.ez
+system_one_client-*.tar
