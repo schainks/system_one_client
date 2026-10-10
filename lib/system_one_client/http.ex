@@ -46,13 +46,26 @@ defmodule SystemOneClient.HTTP do
   end
 
   defp request_with_retries(p, state, questions, opts) do
+    case encode(p, state, questions) do
+      {:ok, request_body} -> do_request(p, request_body, opts)
+      {:error, _} = error -> error
+    end
+  end
+
+  defp encode(%{wire: :openai_decisions, model: model}, state, questions),
+    do: SystemOneClient.Wire.OpenAIDecisions.encode_request(state, questions, model)
+
+  defp encode(p, state, questions),
+    do: {:ok, %{state: state, questions: questions} |> maybe_put(:model, p.model)}
+
+  defp do_request(p, request_body, opts) do
     max_retries = Keyword.get(opts, :max_retries, 2)
     base = Keyword.get(opts, :retry_delay_ms, 250)
 
     req =
       Req.new(
         url: p.url,
-        json: %{state: state, questions: questions} |> maybe_put(:model, p.model),
+        json: request_body,
         receive_timeout: Keyword.get(opts, :receive_timeout, 2_000),
         retry: false
       )
@@ -66,6 +79,7 @@ defmodule SystemOneClient.HTTP do
     case Req.post(req) do
       {:ok, %Req.Response{status: 200, body: body}} when is_map(body) ->
         with {:ok, inner} <- Provider.unwrap(p.envelope, body),
+             {:ok, inner} <- decode(p, inner),
              {:ok, answers} <- parse_answers(inner) do
           {:ok, answers, inner}
         end
@@ -113,6 +127,15 @@ defmodule SystemOneClient.HTTP do
       _ -> nil
     end
   end
+
+  defp decode(%{wire: :openai_decisions}, body) do
+    case SystemOneClient.Wire.OpenAIDecisions.decode_response(body) do
+      {:ok, decoded} -> {:ok, decoded}
+      {:error, reason} -> {:error, {:malformed_answers, reason}}
+    end
+  end
+
+  defp decode(_p, body), do: {:ok, body}
 
   defp parse_answers(%{"answers" => raw}) do
     case Answer.parse_all(raw) do

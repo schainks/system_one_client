@@ -207,6 +207,95 @@ defmodule SystemOneClient.HTTPTest do
              inspect(stop_meta) =~ "test-key"
   end
 
+  test "openai provider: translates the request and the response end to end" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.request_path == "/v1/decisions"
+      assert ["Bearer sk-test"] = Plug.Conn.get_req_header(conn, "authorization")
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+      req = Jason.decode!(body)
+      assert req["model"] == "gpt-6-luna"
+      assert req["input"] == "I was charged twice for my order."
+
+      assert [%{"type" => "choice", "name" => "department", "choices" => [_ | _]}] =
+               req["questions"]
+
+      refute Map.has_key?(req, "state")
+
+      Req.Test.json(conn, %{
+        "model" => "gpt-6-luna",
+        "answers" => [
+          %{
+            "type" => "choice",
+            "name" => "department",
+            "choice" => "billing",
+            "probabilities" => [
+              %{"value" => "billing", "probability" => 0.95},
+              %{"value" => "technical", "probability" => 0.05}
+            ],
+            "confidence" => 0.93
+          }
+        ]
+      })
+    end)
+
+    questions = %{
+      "department" => %{
+        "type" => "choice",
+        "instructions" => "Which department should handle this complaint?",
+        "criteria" => %{"billing" => "Payments", "technical" => "Product problems"}
+      }
+    }
+
+    assert {:ok,
+            %{
+              "department" =>
+                %SystemOneClient.Answer.Choice{choice: "billing", confidence: 0.93} = c
+            }, %{provider: :openai, model: "gpt-6-luna"}} =
+             SystemOneClient.HTTP.evaluate("I was charged twice for my order.", questions,
+               provider: :openai,
+               api_key: "sk-test",
+               plug: {Req.Test, __MODULE__}
+             )
+
+    assert c.probabilities == %{"billing" => 0.95, "technical" => 0.05}
+  end
+
+  test "openai provider: a refused question comes back as a Refusal next to the other answers" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      Req.Test.json(conn, %{
+        "answers" => [
+          %{"type" => "predicate", "name" => "q", "probability" => 0.3},
+          %{"type" => "refusal", "name" => "r"}
+        ]
+      })
+    end)
+
+    questions = %{
+      "q" => %{"type" => "noul", "instructions" => "?"},
+      "r" => %{"type" => "noul", "instructions" => "?"}
+    }
+
+    assert {:ok, %{"q" => %Noul{noul: 0.3}, "r" => %SystemOneClient.Answer.Refusal{}}, _} =
+             SystemOneClient.HTTP.evaluate("s", questions,
+               provider: :openai,
+               api_key: "k",
+               plug: {Req.Test, __MODULE__}
+             )
+  end
+
+  test "openai provider: invalid questions are rejected before any request" do
+    Req.Test.stub(__MODULE__, fn _conn -> flunk("must not send") end)
+
+    assert {:error, {:invalid_question, "d", :missing_criteria}} =
+             SystemOneClient.HTTP.evaluate(
+               "s",
+               %{"d" => %{"type" => "choice", "instructions" => "?"}},
+               provider: :openai,
+               api_key: "k",
+               plug: {Req.Test, __MODULE__}
+             )
+  end
+
   test "surfaces malformed answers" do
     Req.Test.stub(__MODULE__, fn conn ->
       Req.Test.json(conn, %{"answers" => %{"q" => %{"type" => "choice"}}})

@@ -2,6 +2,7 @@
 
 Elixir client for System One decision models: [TypeSafe Jev](https://docs.typesafe.ai),
 [Cloudflare Clef](https://developers.cloudflare.com/workers-ai/models/clef/),
+[OpenAI's Decisions API](https://developers.openai.com/api/docs/guides/decisions),
 [OpenRouter's decisions endpoint](https://openrouter.ai), and anything self-hosted that
 speaks the `/v1/systemone` wire format (for example [CLM](https://github.com/Contrastive-LM/CLM)).
 
@@ -11,7 +12,7 @@ router or a gate needs: top-k over a Choice, a threshold on a Noul, a level cut 
 
 - One behaviour, `SystemOneClient`, with `evaluate(state, questions, opts)`.
 - `SystemOneClient.HTTP` for real calls; `SystemOneClient.Stub` for tests, no network.
-- Four providers behind one option; `url:` and `model:` override any of them.
+- Five providers behind one option; `url:` and `model:` override any of them.
 - Retries on 429, 529, 502, 503, 504 and transport errors, honouring `Retry-After`.
 - Never raises for network conditions; tagged error tuples at the boundary.
 - Telemetry without leaking state, questions, or keys.
@@ -67,16 +68,39 @@ and `score`.
 | --- | --- | --- | --- |
 | `:typesafe` (default) | `https://api.typesafe.ai/v1/systemone` | `api_key:` or `TYPESAFE_API_KEY` | `jev-latest` |
 | `:cloudflare` | `https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/run/@cf/cloudflare/clef` | `api_key:` or `CLOUDFLARE_API_TOKEN`; `account_id:` or `CLOUDFLARE_ACCOUNT_ID` | `clef` (`model: "clef-flash"` for the 9B) |
+| `:openai` | `https://api.openai.com/v1/decisions` | `api_key:` or `OPENAI_API_KEY` | `gpt-6-luna` |
 | `:openrouter` | `https://openrouter.ai/api/alpha/decisions` | `api_key:` or `OPENROUTER_API_KEY` | `typesafe/jev-1.13` |
 | `:compatible` | `url:` (required) | optional | none |
 
 ```elixir
 SystemOneClient.evaluate(state, questions, provider: :cloudflare, model: "clef-flash")
+SystemOneClient.evaluate(state, questions, provider: :openai)
 SystemOneClient.evaluate(state, questions, provider: :compatible, url: "http://localhost:8700/v1/systemone")
 ```
 
 Cloudflare's `result` envelope is unwrapped for you; a failed envelope returns
 `{:error, {:provider_error, errors}}`.
+
+### OpenAI Decisions
+
+OpenAI's Decisions API asks the same three kinds of question with a different wire
+format, so `provider: :openai` translates in both directions and you keep writing the
+same questions and get the same structs back:
+
+- `noul` is sent as a `predicate`. Predicates have no criteria field, so `true` / `false`
+  criteria are appended to the instructions as "True when: ..." and "False when: ...".
+- `choice` criteria become `choices`, and `score` levels become `levels` labelled
+  `"Level 0"`, `"Level 1"`, ... with your text as the description.
+- `state` becomes the text `input`: strings pass through, anything else is JSON-encoded.
+  Non-string instructions and descriptions are JSON-encoded too.
+- Score probabilities are keyed by level index (`"0"`, `"1"`, ...) and `legend` carries
+  the labels, the same as TypeSafe.
+- OpenAI can refuse a single question. That answer comes back as
+  `%SystemOneClient.Answer.Refusal{}` under its id, and the other answers are unaffected.
+- A `choice` or `score` question without criteria is rejected before the request, as
+  `{:error, {:invalid_question, id, :missing_criteria}}`.
+- For regional processing, pass `url: "https://us.api.openai.com/v1/decisions"` (or `eu.`).
+  Image inputs aren't supported yet.
 
 ## Options
 
