@@ -283,6 +283,38 @@ defmodule SystemOneClient.HTTPTest do
              )
   end
 
+  test "openai provider: score answers carry the caller's level text as the legend" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      Req.Test.json(conn, %{
+        "answers" => [
+          %{
+            "type" => "score",
+            "name" => "sev",
+            "score" => 1.0,
+            "probabilities" => [
+              %{"value" => 0, "label" => "Level 0", "probability" => 0.0},
+              %{"value" => 1, "label" => "Level 1", "probability" => 1.0}
+            ],
+            "confidence" => 1.0
+          }
+        ]
+      })
+    end)
+
+    questions = %{
+      "sev" => %{"type" => "score", "instructions" => "?", "criteria" => ["Minor", "Major"]}
+    }
+
+    assert {:ok,
+            %{"sev" => %SystemOneClient.Answer.Score{legend: %{"0" => "Minor", "1" => "Major"}}},
+            _} =
+             SystemOneClient.HTTP.evaluate("s", questions,
+               provider: :openai,
+               api_key: "k",
+               plug: {Req.Test, __MODULE__}
+             )
+  end
+
   test "openai provider: invalid questions are rejected before any request" do
     Req.Test.stub(__MODULE__, fn _conn -> flunk("must not send") end)
 

@@ -214,6 +214,39 @@ defmodule SystemOneClient.Wire.OpenAIDecisionsTest do
       assert answers["sensitive"] == %{"type" => "refusal"}
     end
 
+    test "rebuilds the score legend from the original level text when given the questions" do
+      questions = %{
+        "severity" => %{
+          "type" => "score",
+          "instructions" => "?",
+          "criteria" => ["Cosmetic", "Blocked"]
+        }
+      }
+
+      body = %{
+        "answers" => [
+          %{
+            "type" => "score",
+            "name" => "severity",
+            "score" => 0.9,
+            "probabilities" => [
+              %{"value" => 0, "label" => "Level 0", "probability" => 0.1},
+              %{"value" => 1, "label" => "Level 1", "probability" => 0.9}
+            ],
+            "confidence" => 0.8
+          }
+        ]
+      }
+
+      assert {:ok,
+              %{
+                "answers" => %{
+                  "severity" => %{"legend" => %{"0" => "Cosmetic", "1" => "Blocked"}}
+                }
+              }} =
+               Wire.decode_response(body, questions)
+    end
+
     test "stringifies non-string choice values" do
       body = %{
         "answers" => [

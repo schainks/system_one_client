@@ -45,12 +45,18 @@ defmodule SystemOneClient.Wire.OpenAIDecisions do
   Converts a `/v1/decisions` response into the System One shape:
   `%{"answers" => %{id => raw_answer}, "model" => _, "usage" => _}`, ready for
   `SystemOneClient.Answer.parse_all/1`.
+
+  Pass the original `questions` so score legends carry the caller's level text instead
+  of the `"Level N"` labels sent to OpenAI.
   """
-  @spec decode_response(map()) :: {:ok, map()} | {:error, term()}
-  def decode_response(%{"answers" => answers} = body) when is_list(answers) do
+  @spec decode_response(map(), map()) :: {:ok, map()} | {:error, term()}
+  def decode_response(body, questions \\ %{})
+
+  def decode_response(%{"answers" => answers} = body, questions) when is_list(answers) do
     Enum.reduce_while(answers, {:ok, %{}}, fn
       %{"name" => name} = answer, {:ok, acc} when is_binary(name) ->
-        {:cont, {:ok, Map.put(acc, name, decode_answer(answer))}}
+        {:cont,
+         {:ok, Map.put(acc, name, answer |> decode_answer() |> restore_legend(questions, name))}}
 
       answer, _acc ->
         {:halt, {:error, {:unnamed_answer, answer}}}
@@ -64,7 +70,7 @@ defmodule SystemOneClient.Wire.OpenAIDecisions do
     end
   end
 
-  def decode_response(_body), do: {:error, :no_answers}
+  def decode_response(_body, _questions), do: {:error, :no_answers}
 
   # -- request ----------------------------------------------------------------
 
@@ -179,6 +185,25 @@ defmodule SystemOneClient.Wire.OpenAIDecisions do
 
   defp decode_answer(%{"type" => "refusal"}), do: %{"type" => "refusal"}
   defp decode_answer(answer), do: Map.delete(answer, "name")
+
+  defp restore_legend(%{"type" => "score"} = answer, questions, name) do
+    question = Enum.find_value(questions, fn {id, q} -> if to_string(id) == name, do: q end)
+
+    case question && get(question, :criteria) do
+      levels when is_list(levels) and levels != [] ->
+        legend =
+          levels
+          |> Enum.with_index()
+          |> Map.new(fn {text, i} -> {Integer.to_string(i), text(text)} end)
+
+        Map.put(answer, "legend", legend)
+
+      _ ->
+        answer
+    end
+  end
+
+  defp restore_legend(answer, _questions, _name), do: answer
 
   defp probability_map(rows) when is_list(rows),
     do: Map.new(rows, fn row -> {stringify(row["value"]), row["probability"]} end)

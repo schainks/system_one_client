@@ -94,7 +94,7 @@ same questions and get the same structs back:
 - `state` becomes the text `input`: strings pass through, anything else is JSON-encoded.
   Non-string instructions and descriptions are JSON-encoded too.
 - Score probabilities are keyed by level index (`"0"`, `"1"`, ...) and `legend` carries
-  the labels, the same as TypeSafe.
+  your level text, the same as TypeSafe.
 - OpenAI can refuse a single question. That answer comes back as
   `%SystemOneClient.Answer.Refusal{}` under its id, and the other answers are unaffected.
 - A `choice` or `score` question without criteria is rejected before the request, as

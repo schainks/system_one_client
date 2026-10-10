@@ -47,7 +47,7 @@ defmodule SystemOneClient.HTTP do
 
   defp request_with_retries(p, state, questions, opts) do
     case encode(p, state, questions) do
-      {:ok, request_body} -> do_request(p, request_body, opts)
+      {:ok, request_body} -> do_request(p, request_body, questions, opts)
       {:error, _} = error -> error
     end
   end
@@ -58,7 +58,7 @@ defmodule SystemOneClient.HTTP do
   defp encode(p, state, questions),
     do: {:ok, %{state: state, questions: questions} |> maybe_put(:model, p.model)}
 
-  defp do_request(p, request_body, opts) do
+  defp do_request(p, request_body, questions, opts) do
     max_retries = Keyword.get(opts, :max_retries, 2)
     base = Keyword.get(opts, :retry_delay_ms, 250)
 
@@ -72,14 +72,14 @@ defmodule SystemOneClient.HTTP do
       |> maybe_auth(p.auth)
       |> maybe_plug(Keyword.get(opts, :plug))
 
-    attempt(req, p, 0, max_retries, base)
+    attempt(req, p, questions, 0, max_retries, base)
   end
 
-  defp attempt(req, p, n, max_retries, base) do
+  defp attempt(req, p, questions, n, max_retries, base) do
     case Req.post(req) do
       {:ok, %Req.Response{status: 200, body: body}} when is_map(body) ->
         with {:ok, inner} <- Provider.unwrap(p.envelope, body),
-             {:ok, inner} <- decode(p, inner),
+             {:ok, inner} <- decode(p, inner, questions),
              {:ok, answers} <- parse_answers(inner) do
           {:ok, answers, inner}
         end
@@ -90,14 +90,14 @@ defmodule SystemOneClient.HTTP do
       {:ok, %Req.Response{status: status} = resp}
       when status in @retry_statuses and n < max_retries ->
         Process.sleep(retry_after_ms(resp) || base * Integer.pow(2, n))
-        attempt(req, p, n + 1, max_retries, base)
+        attempt(req, p, questions, n + 1, max_retries, base)
 
       {:ok, %Req.Response{status: status, body: body}} ->
         {:error, {:http, status, body}}
 
       {:error, %Req.TransportError{}} when n < max_retries ->
         Process.sleep(base * Integer.pow(2, n))
-        attempt(req, p, n + 1, max_retries, base)
+        attempt(req, p, questions, n + 1, max_retries, base)
 
       {:error, %Req.TransportError{reason: reason}} ->
         {:error, {:transport, reason}}
@@ -128,14 +128,14 @@ defmodule SystemOneClient.HTTP do
     end
   end
 
-  defp decode(%{wire: :openai_decisions}, body) do
-    case SystemOneClient.Wire.OpenAIDecisions.decode_response(body) do
+  defp decode(%{wire: :openai_decisions}, body, questions) do
+    case SystemOneClient.Wire.OpenAIDecisions.decode_response(body, questions) do
       {:ok, decoded} -> {:ok, decoded}
       {:error, reason} -> {:error, {:malformed_answers, reason}}
     end
   end
 
-  defp decode(_p, body), do: {:ok, body}
+  defp decode(_p, body, _questions), do: {:ok, body}
 
   defp parse_answers(%{"answers" => raw}) do
     case Answer.parse_all(raw) do
