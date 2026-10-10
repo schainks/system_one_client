@@ -1,4 +1,4 @@
-# SystemOneClient
+# SystemOne Client
 
 Elixir client for System One decision models: [TypeSafe Jev](https://docs.typesafe.ai),
 [Cloudflare Clef](https://developers.cloudflare.com/workers-ai/models/clef/),
