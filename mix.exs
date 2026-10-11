@@ -23,20 +23,28 @@ defmodule SystemOneClient.MixProject do
 
   def application, do: [extra_applications: [:logger]]
 
+  def cli do
+    [preferred_envs: [docs: :docs, "hex.publish": :docs]]
+  end
+
   defp deps do
     [
       {:req, "~> 0.5"},
       {:jason, "~> 1.4"},
       {:telemetry, "~> 1.3"},
       {:plug, "~> 1.16", only: :test},
-      {:ex_doc, "~> 0.34", only: :dev, runtime: false}
+      {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
+      {:ex_doc, "~> 0.34", only: :docs, runtime: false}
     ]
   end
 
   defp package do
     [
       licenses: ["Apache-2.0"],
-      links: %{"GitHub" => @source_url},
+      links: %{
+        "GitHub" => @source_url,
+        "Changelog" => "https://hexdocs.pm/system_one_client/changelog.html"
+      },
       files: ~w(lib mix.exs README.md CHANGELOG.md LICENSE)
     ]
   end

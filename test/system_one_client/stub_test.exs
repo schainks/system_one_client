@@ -1,6 +1,6 @@
 defmodule SystemOneClient.StubTest do
   use ExUnit.Case, async: false
-  alias SystemOneClient.Answer.{Noul, Choice}
+  alias SystemOneClient.Answer.{Choice, Noul}
 
   @q %{"a" => %{"type" => "noul", "instructions" => "?"}}
 

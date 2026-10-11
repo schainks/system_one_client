@@ -15,6 +15,7 @@ defmodule SystemOneClient.HTTP do
   @behaviour SystemOneClient
 
   alias SystemOneClient.{Answer, Provider}
+  alias SystemOneClient.Wire.OpenAIDecisions
 
   @retry_statuses [429, 529, 502, 503, 504]
 
@@ -27,22 +28,20 @@ defmodule SystemOneClient.HTTP do
       :telemetry.span([:system_one_client, :request], meta, fn ->
         t0 = System.monotonic_time(:millisecond)
         result = request_with_retries(p, state, questions, opts)
-        latency = System.monotonic_time(:millisecond) - t0
-
-        case result do
-          {:ok, answers, resp} ->
-            model = resp["model"] || p.model
-
-            {{:ok, answers,
-              %{model: model, usage: resp["usage"], latency_ms: latency, provider: p.provider}},
-             Map.merge(meta, %{status: :ok, model: model, latency_ms: latency})}
-
-          {:error, reason} ->
-            {{:error, reason},
-             Map.merge(meta, %{status: :error, latency_ms: latency, error: error_kind(reason)})}
-        end
+        span_result(result, p, meta, System.monotonic_time(:millisecond) - t0)
       end)
     end
+  end
+
+  defp span_result({:ok, answers, resp}, p, meta, latency) do
+    model = resp["model"] || p.model
+    out = %{model: model, usage: resp["usage"], latency_ms: latency, provider: p.provider}
+    {{:ok, answers, out}, Map.merge(meta, %{status: :ok, model: model, latency_ms: latency})}
+  end
+
+  defp span_result({:error, reason}, _p, meta, latency) do
+    stop = %{status: :error, latency_ms: latency, error: error_kind(reason)}
+    {{:error, reason}, Map.merge(meta, stop)}
   end
 
   defp request_with_retries(p, state, questions, opts) do
@@ -53,7 +52,7 @@ defmodule SystemOneClient.HTTP do
   end
 
   defp encode(%{wire: :openai_decisions, model: model}, state, questions),
-    do: SystemOneClient.Wire.OpenAIDecisions.encode_request(state, questions, model)
+    do: OpenAIDecisions.encode_request(state, questions, model)
 
   defp encode(p, state, questions),
     do: {:ok, %{state: state, questions: questions} |> maybe_put(:model, p.model)}
@@ -76,34 +75,43 @@ defmodule SystemOneClient.HTTP do
   end
 
   defp attempt(req, p, questions, n, max_retries, base) do
-    case Req.post(req) do
-      {:ok, %Req.Response{status: 200, body: body}} when is_map(body) ->
-        with {:ok, inner} <- Provider.unwrap(p.envelope, body),
-             {:ok, inner} <- decode(p, inner, questions),
-             {:ok, answers} <- parse_answers(inner) do
-          {:ok, answers, inner}
-        end
-
-      {:ok, %Req.Response{status: 200, body: body}} ->
-        {:error, {:malformed_answers, {:not_json, body}}}
-
-      {:ok, %Req.Response{status: status} = resp}
-      when status in @retry_statuses and n < max_retries ->
-        Process.sleep(retry_after_ms(resp) || base * Integer.pow(2, n))
+    case classify(Req.post(req), p, questions) do
+      {:retry, delay, _error} when n < max_retries ->
+        Process.sleep(delay || base * Integer.pow(2, n))
         attempt(req, p, questions, n + 1, max_retries, base)
 
-      {:ok, %Req.Response{status: status, body: body}} ->
-        {:error, {:http, status, body}}
+      {:retry, _delay, error} ->
+        error
 
-      {:error, %Req.TransportError{}} when n < max_retries ->
-        Process.sleep(base * Integer.pow(2, n))
-        attempt(req, p, questions, n + 1, max_retries, base)
+      {:done, result} ->
+        result
+    end
+  end
 
-      {:error, %Req.TransportError{reason: reason}} ->
-        {:error, {:transport, reason}}
+  # {:done, result} or {:retry, retry_after_ms | nil, error_if_out_of_retries}
+  defp classify({:ok, %Req.Response{status: 200, body: body}}, p, questions) when is_map(body),
+    do: {:done, handle_success(body, p, questions)}
 
-      {:error, other} ->
-        {:error, {:transport, other}}
+  defp classify({:ok, %Req.Response{status: 200, body: body}}, _p, _q),
+    do: {:done, {:error, {:malformed_answers, {:not_json, body}}}}
+
+  defp classify({:ok, %Req.Response{status: status, body: body} = resp}, _p, _q)
+       when status in @retry_statuses,
+       do: {:retry, retry_after_ms(resp), {:error, {:http, status, body}}}
+
+  defp classify({:ok, %Req.Response{status: status, body: body}}, _p, _q),
+    do: {:done, {:error, {:http, status, body}}}
+
+  defp classify({:error, %Req.TransportError{reason: reason}}, _p, _q),
+    do: {:retry, nil, {:error, {:transport, reason}}}
+
+  defp classify({:error, other}, _p, _q), do: {:done, {:error, {:transport, other}}}
+
+  defp handle_success(body, p, questions) do
+    with {:ok, inner} <- Provider.unwrap(p.envelope, body),
+         {:ok, inner} <- decode(p, inner, questions),
+         {:ok, answers} <- parse_answers(inner) do
+      {:ok, answers, inner}
     end
   end
 
@@ -129,7 +137,7 @@ defmodule SystemOneClient.HTTP do
   end
 
   defp decode(%{wire: :openai_decisions}, body, questions) do
-    case SystemOneClient.Wire.OpenAIDecisions.decode_response(body, questions) do
+    case OpenAIDecisions.decode_response(body, questions) do
       {:ok, decoded} -> {:ok, decoded}
       {:error, reason} -> {:error, {:malformed_answers, reason}}
     end

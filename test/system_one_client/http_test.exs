@@ -144,12 +144,12 @@ defmodule SystemOneClient.HTTPTest do
     Req.Test.stub(__MODULE__, fn conn ->
       Req.Test.json(conn, %{
         "success" => false,
-        "errors" => [%{"code" => 10000, "message" => "auth"}],
+        "errors" => [%{"code" => 10_000, "message" => "auth"}],
         "result" => nil
       })
     end)
 
-    assert {:error, {:provider_error, [%{"code" => 10000, "message" => "auth"}]}} =
+    assert {:error, {:provider_error, [%{"code" => 10_000, "message" => "auth"}]}} =
              SystemOneClient.HTTP.evaluate("s", @questions,
                provider: :cloudflare,
                account_id: "a",
