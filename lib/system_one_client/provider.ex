@@ -14,10 +14,11 @@ defmodule SystemOneClient.Provider do
   or the provider's environment variable; `env:` can replace the environment in tests.
   """
 
+  @type name :: :typesafe | :cloudflare | :openai | :openrouter | :compatible
   @type envelope :: :top_level | :cloudflare_result
   @type wire :: :system_one | :openai_decisions
   @type t :: %{
-          provider: atom(),
+          provider: name(),
           url: String.t(),
           auth: {:bearer, String.t()} | nil,
           model: String.t() | nil,
@@ -52,7 +53,20 @@ defmodule SystemOneClient.Provider do
     }
   }
 
-  @spec resolve(keyword()) :: {:ok, t()} | {:error, term()}
+  @doc """
+  Resolves the endpoint, auth, default model, envelope and wire format for a request.
+
+      iex> {:ok, p} = SystemOneClient.Provider.resolve(provider: :openai, api_key: "sk-test")
+      iex> {p.url, p.model, p.wire}
+      {"https://api.openai.com/v1/decisions", "gpt-6-luna", :openai_decisions}
+
+      iex> SystemOneClient.Provider.resolve(provider: :typesafe, env: %{})
+      {:error, :missing_api_key}
+  """
+  @spec resolve(SystemOneClient.options()) ::
+          {:ok, t()}
+          | {:error,
+             :missing_api_key | :missing_account_id | :missing_url | {:unknown_provider, term()}}
   def resolve(opts) do
     env = Keyword.get(opts, :env) || System.get_env()
     resolve(Keyword.get(opts, :provider, :typesafe), opts, env, Keyword.get(opts, :api_key))

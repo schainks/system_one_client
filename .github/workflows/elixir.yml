@@ -63,6 +63,13 @@ jobs:
       - run: mix deps.unlock --check-unused
       - run: mix compile --warnings-as-errors
       - run: mix credo --strict
+      - name: Restore Dialyzer PLT cache
+        uses: actions/cache@v4
+        with:
+          path: priv/plts
+          key: ${{ runner.os }}-plt-1.20-29-${{ hashFiles('**/mix.lock') }}
+          restore-keys: ${{ runner.os }}-plt-1.20-29-
+      - run: mix dialyzer --format github
 
   docs:
     name: Docs

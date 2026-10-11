@@ -20,6 +20,9 @@ defmodule SystemOneClient.HTTP do
   @retry_statuses [429, 529, 502, 503, 504]
 
   @impl true
+  @spec evaluate(term(), SystemOneClient.questions(), SystemOneClient.options()) ::
+          {:ok, SystemOneClient.answers(), SystemOneClient.meta()}
+          | {:error, SystemOneClient.error()}
   def evaluate(state, questions, opts \\ []) do
     with :ok <- SystemOneClient.validate_questions(questions),
          {:ok, p} <- Provider.resolve(opts) do

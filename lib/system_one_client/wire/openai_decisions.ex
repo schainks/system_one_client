@@ -20,7 +20,18 @@ defmodule SystemOneClient.Wire.OpenAIDecisions do
   JSON-encoded, since OpenAI expects text.
   """
 
-  @doc "Builds the `/v1/decisions` request body."
+  @doc """
+  Builds the `/v1/decisions` request body.
+
+      iex> {:ok, body} =
+      ...>   SystemOneClient.Wire.OpenAIDecisions.encode_request(
+      ...>     "I was charged twice.",
+      ...>     %{"urgent" => %{"type" => "noul", "instructions" => "Is this urgent?"}},
+      ...>     "gpt-6-luna"
+      ...>   )
+      iex> body.questions
+      [%{type: "predicate", name: "urgent", instructions: "Is this urgent?"}]
+  """
   @spec encode_request(term(), map(), String.t() | nil) :: {:ok, map()} | {:error, term()}
   def encode_request(state, questions, model) do
     questions

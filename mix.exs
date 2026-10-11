@@ -16,6 +16,11 @@ defmodule SystemOneClient.MixProject do
           "typed Choice, Noul and Score answers with full probability distributions, a behaviour and stub for tests.",
       package: package(),
       docs: docs(),
+      dialyzer: [
+        plt_local_path: "priv/plts",
+        plt_core_path: "priv/plts",
+        flags: [:unmatched_returns, :error_handling, :extra_return, :missing_return]
+      ],
       name: "SystemOneClient",
       source_url: @source_url
     ]
@@ -34,6 +39,7 @@ defmodule SystemOneClient.MixProject do
       {:telemetry, "~> 1.3"},
       {:plug, "~> 1.16", only: :test},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
+      {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
       {:ex_doc, "~> 0.34", only: :docs, runtime: false}
     ]
   end
@@ -50,6 +56,22 @@ defmodule SystemOneClient.MixProject do
   end
 
   defp docs do
-    [main: "readme", extras: ["README.md", "CHANGELOG.md"], source_ref: "v#{@version}"]
+    [
+      main: "readme",
+      extras: ["README.md", "CHANGELOG.md"],
+      source_ref: "v#{@version}",
+      groups_for_modules: [
+        Client: [SystemOneClient, SystemOneClient.HTTP],
+        Providers: [SystemOneClient.Provider, SystemOneClient.Wire.OpenAIDecisions],
+        Answers: [
+          SystemOneClient.Answer,
+          SystemOneClient.Answer.Choice,
+          SystemOneClient.Answer.Noul,
+          SystemOneClient.Answer.Score,
+          SystemOneClient.Answer.Refusal
+        ],
+        Testing: [SystemOneClient.Stub]
+      ]
+    ]
   end
 end
