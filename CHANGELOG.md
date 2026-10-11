@@ -9,8 +9,9 @@
 - `SystemOneClient.Answer.Refusal` for questions the model declines to answer.
 - `SystemOneClient.Provider` results carry a `wire` field (`:system_one` or
   `:openai_decisions`).
-- Typespecs for the public API, including `SystemOneClient.option/0`, `options/0` and
-  `error/0` and `SystemOneClient.Provider.name/0`; checked with Dialyzer in CI.
+- Typespecs for the public API, including `t:SystemOneClient.option/0`,
+  `t:SystemOneClient.options/0`, `t:SystemOneClient.error/0` and
+  `t:SystemOneClient.Provider.name/0`; checked with Dialyzer in CI.
 - Doctests on `validate_questions/1`, `Answer.parse/1`, `Provider.resolve/1` and the
   OpenAI request encoder, and grouped modules in the docs.
 
