@@ -9,7 +9,7 @@ defmodule SystemOneClient.HTTP do
   a telemetry event.
 
   Telemetry: `[:system_one_client, :request, :start | :stop | :exception]` with
-  `provider`, `model` and `question_count`; `stop` adds `status` (`:ok` | `:error`),
+  `provider`, `model`, `question_count` and `image_count`; `stop` adds `status` (`:ok` | `:error`),
   `latency_ms`, and on error an `error` kind. State, questions and keys are never included.
   """
   @behaviour SystemOneClient
@@ -24,13 +24,21 @@ defmodule SystemOneClient.HTTP do
           {:ok, SystemOneClient.answers(), SystemOneClient.meta()}
           | {:error, SystemOneClient.error()}
   def evaluate(state, questions, opts \\ []) do
+    images = Keyword.get(opts, :images) || []
+
     with :ok <- SystemOneClient.validate_questions(questions),
-         {:ok, p} <- Provider.resolve(opts) do
-      meta = %{provider: p.provider, model: p.model, question_count: map_size(questions)}
+         {:ok, p} <- Provider.resolve(opts),
+         :ok <- SystemOneClient.Images.validate(images, p.provider) do
+      meta = %{
+        provider: p.provider,
+        model: p.model,
+        question_count: map_size(questions),
+        image_count: length(images)
+      }
 
       :telemetry.span([:system_one_client, :request], meta, fn ->
         t0 = System.monotonic_time(:millisecond)
-        result = request_with_retries(p, state, questions, opts)
+        result = request_with_retries(p, state, questions, images, opts)
         span_result(result, p, meta, System.monotonic_time(:millisecond) - t0)
       end)
     end
@@ -47,18 +55,25 @@ defmodule SystemOneClient.HTTP do
     {{:error, reason}, Map.merge(meta, stop)}
   end
 
-  defp request_with_retries(p, state, questions, opts) do
-    case encode(p, state, questions) do
+  defp request_with_retries(p, state, questions, images, opts) do
+    case encode(p, state, questions, images) do
       {:ok, request_body} -> do_request(p, request_body, questions, opts)
       {:error, _} = error -> error
     end
   end
 
-  defp encode(%{wire: :openai_decisions, model: model}, state, questions),
-    do: OpenAIDecisions.encode_request(state, questions, model)
+  defp encode(%{wire: :openai_decisions, model: model}, state, questions, images),
+    do: OpenAIDecisions.encode_request(state, questions, model, images)
 
-  defp encode(p, state, questions),
-    do: {:ok, %{state: state, questions: questions} |> maybe_put(:model, p.model)}
+  # Clef takes images as a top-level array next to state (its extension to System One).
+  defp encode(p, state, questions, images) do
+    body =
+      %{state: state, questions: questions}
+      |> maybe_put(:model, p.model)
+      |> maybe_put(:images, if(images == [], do: nil, else: images))
+
+    {:ok, body}
+  end
 
   defp do_request(p, request_body, questions, opts) do
     max_retries = Keyword.get(opts, :max_retries, 2)

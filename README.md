@@ -100,7 +100,35 @@ same questions and get the same structs back:
 - A `choice` or `score` question without criteria is rejected before the request, as
   `{:error, {:invalid_question, id, :missing_criteria}}`.
 - For regional processing, pass `url: "https://us.api.openai.com/v1/decisions"` (or `eu.`).
-  Image inputs aren't supported yet.
+
+## Images
+
+OpenAI's Decisions API and Cloudflare's Clef can judge images as well as text. Pass them
+as base64 data URLs in the `images:` option; `SystemOneClient.image_data_url/2` builds one
+from bytes:
+
+```elixir
+photo = SystemOneClient.image_data_url(File.read!("product.png"), "image/png")
+
+SystemOneClient.evaluate(
+  "Customer says the item arrived broken.",
+  %{"visible_damage" => %{"type" => "noul", "instructions" => "Does the product show visible damage?"}},
+  provider: :openai,
+  images: [photo]
+)
+```
+
+Both providers see the images first and then the state. For OpenAI the client builds a
+user message with `input_image` parts followed by the state as text; for Clef it sends the
+top-level `images` array.
+
+Images are checked before any request:
+
+- Every entry must be a `data:image/...;base64,` URL. Remote `http(s)` URLs are rejected,
+  since neither API accepts them.
+- Clef allows at most 4 PNG, JPEG or WebP images, 4 MiB each and 8 MiB in total once decoded.
+- Providers without image support (`:typesafe`, `:openrouter`, `:compatible`) return
+  `{:error, {:unsupported_option, :images, provider}}` rather than dropping them.
 
 ## Options
 
@@ -114,6 +142,7 @@ same questions and get the same structs back:
 | `client` | app env `:client`, else `HTTP` | implementation module (use `SystemOneClient.Stub` in tests) |
 | `plug` | none | Req plug, for `Req.Test` in your own tests |
 | `env` | `System.get_env()` | replace the environment (tests) |
+| `images` | none | base64 image data URLs (`:openai`, `:cloudflare`); see [Images](#images) |
 
 Errors are tagged tuples:
 
@@ -122,6 +151,8 @@ Errors are tagged tuples:
 {:error, {:invalid_question, id, reason}}
 {:error, {:http, status, body} | {:transport, reason}}
 {:error, {:malformed_answers, reason} | {:provider_error, errors}}
+{:error, {:unsupported_option, :images, provider} | {:invalid_image, index, reason}}
+{:error, {:too_many_images, count, max} | {:images_too_large, bytes, max}}
 ```
 
 ## Testing your code
@@ -147,7 +178,7 @@ For HTTP-level tests pass `plug: {Req.Test, MyTest}` and stub with `Req.Test.stu
 ## Telemetry
 
 `[:system_one_client, :request, :start | :stop | :exception]` via `:telemetry.span/3`.
-Metadata: `provider`, `model`, `question_count`; on `:stop` also `status` (`:ok` | `:error`),
+Metadata: `provider`, `model`, `question_count`, `image_count`; on `:stop` also `status` (`:ok` | `:error`),
 `latency_ms`, and `error` (a kind such as `{:http, 429}` or `:transport`). State, question
 text, bodies and keys are never included.
 

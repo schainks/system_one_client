@@ -9,6 +9,7 @@ defmodule SystemOneClient.Wire.OpenAIDecisions do
   | System One | OpenAI Decisions |
   | --- | --- |
   | `state` (any JSON) | `input` (text; non-string state is JSON-encoded) |
+  | `images:` option | a user message with `input_image` parts, then the state as `input_text` |
   | `%{id => question}` | `[%{name: id, ...}]` |
   | `noul` with optional `true` / `false` criteria | `predicate`, with the criteria folded into `instructions` |
   | `choice` `criteria: %{value => description}` | `choices: [%{value, description}]` |
@@ -32,8 +33,9 @@ defmodule SystemOneClient.Wire.OpenAIDecisions do
       iex> body.questions
       [%{type: "predicate", name: "urgent", instructions: "Is this urgent?"}]
   """
-  @spec encode_request(term(), map(), String.t() | nil) :: {:ok, map()} | {:error, term()}
-  def encode_request(state, questions, model) do
+  @spec encode_request(term(), map(), String.t() | nil, [String.t()]) ::
+          {:ok, map()} | {:error, term()}
+  def encode_request(state, questions, model, images \\ []) do
     questions
     |> Enum.sort_by(fn {id, _} -> to_string(id) end)
     |> Enum.reduce_while({:ok, []}, fn {id, q}, {:ok, acc} ->
@@ -44,7 +46,7 @@ defmodule SystemOneClient.Wire.OpenAIDecisions do
     end)
     |> case do
       {:ok, encoded} ->
-        body = %{input: encode_input(state), questions: Enum.reverse(encoded)}
+        body = %{input: encode_input(state, images), questions: Enum.reverse(encoded)}
         {:ok, if(model, do: Map.put(body, :model, model), else: body)}
 
       error ->
@@ -152,8 +154,13 @@ defmodule SystemOneClient.Wire.OpenAIDecisions do
 
   defp levels(_), do: []
 
-  defp encode_input(state) when is_binary(state), do: state
-  defp encode_input(state), do: Jason.encode!(state)
+  defp encode_input(state, images) when images in [nil, []], do: text(state)
+
+  # Images first, then the state as text: the same order Clef uses.
+  defp encode_input(state, images) do
+    parts = Enum.map(images, &%{type: "input_image", image_url: &1})
+    [%{role: "user", content: parts ++ [%{type: "input_text", text: text(state)}]}]
+  end
 
   defp text(value) when is_binary(value), do: value
   defp text(value), do: Jason.encode!(value)

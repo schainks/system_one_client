@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.3.0 (unreleased)
+
+### Added
+
+- `images:` option for image inputs with `provider: :openai` and `provider: :cloudflare`.
+  Images are base64 data URLs; `SystemOneClient.image_data_url/2` builds one from bytes.
+  OpenAI receives them as `input_image` parts before the state text; Clef receives its
+  top-level `images` array. Both see the images before the state.
+- `SystemOneClient.Images` validates images before any request: data URLs only (no remote
+  URLs), plus Clef's limits of 4 PNG, JPEG or WebP images, 4 MiB each and 8 MiB in total.
+  Other providers return `{:error, {:unsupported_option, :images, provider}}`.
+- Telemetry metadata includes `image_count`.
+
 ## 0.2.0 (2026-10-12)
 
 ### Added

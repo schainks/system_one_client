@@ -3,6 +3,7 @@ defmodule SystemOneClient.DoctestTest do
 
   doctest SystemOneClient
   doctest SystemOneClient.Answer
+  doctest SystemOneClient.Images
   doctest SystemOneClient.Provider
   doctest SystemOneClient.Wire.OpenAIDecisions
 end
