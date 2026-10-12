@@ -33,7 +33,16 @@ defmodule SystemOneClient.Answer do
           }
   end
 
-  @type t :: Choice.t() | Noul.t() | Score.t()
+  defmodule Refusal do
+    @moduledoc """
+    The model declined to answer this question (OpenAI's Decisions API can return
+    this per question). It carries no probability; treat it as "no answer".
+    """
+    defstruct []
+    @type t :: %__MODULE__{}
+  end
+
+  @type t :: Choice.t() | Noul.t() | Score.t() | Refusal.t()
 
   @spec parse(map()) :: {:ok, t()} | {:error, term()}
   def parse(%{"type" => "choice", "choice" => c, "probabilities" => p, "confidence" => conf})
@@ -59,6 +68,8 @@ defmodule SystemOneClient.Answer do
          }},
       else: {:error, {:malformed_answer, "score"}}
   end
+
+  def parse(%{"type" => "refusal"}), do: {:ok, %Refusal{}}
 
   def parse(%{"type" => type}) when type in ["choice", "noul", "score"],
     do: {:error, {:malformed_answer, type}}

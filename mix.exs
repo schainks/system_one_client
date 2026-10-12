@@ -1,7 +1,7 @@
 defmodule SystemOneClient.MixProject do
   use Mix.Project
 
-  @version "0.1.0"
+  @version "0.2.0"
   @source_url "https://github.com/schainks/system_one_client"
 
   def project do
@@ -12,7 +12,7 @@ defmodule SystemOneClient.MixProject do
       start_permanent: Mix.env() == :prod,
       deps: deps(),
       description:
-        "Client for System One decision models (TypeSafe Jev, Cloudflare Clef, OpenRouter, self-hosted): " <>
+        "Client for System One decision models (TypeSafe Jev, Cloudflare Clef, OpenAI Decisions, OpenRouter, self-hosted): " <>
           "typed Choice, Noul and Score answers with full probability distributions, a behaviour and stub for tests.",
       package: package(),
       docs: docs(),

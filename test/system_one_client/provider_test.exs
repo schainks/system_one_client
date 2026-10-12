@@ -50,6 +50,31 @@ defmodule SystemOneClient.ProviderTest do
       assert p.envelope == :top_level
     end
 
+    test "openai decisions endpoint, its default model, and its wire format" do
+      assert {:ok, p} = Provider.resolve(provider: :openai, api_key: "sk")
+      assert p.url == "https://api.openai.com/v1/decisions"
+      assert p.model == "gpt-6-luna"
+      assert p.auth == {:bearer, "sk"}
+      assert p.wire == :openai_decisions
+
+      assert {:ok, %{auth: {:bearer, "envkey"}}} =
+               Provider.resolve(provider: :openai, env: %{"OPENAI_API_KEY" => "envkey"})
+
+      assert {:error, :missing_api_key} = Provider.resolve(provider: :openai, env: %{})
+    end
+
+    test "every other provider uses the system one wire format" do
+      for provider <- [:typesafe, :openrouter] do
+        assert {:ok, %{wire: :system_one}} = Provider.resolve(provider: provider, api_key: "k")
+      end
+
+      assert {:ok, %{wire: :system_one}} =
+               Provider.resolve(provider: :cloudflare, api_key: "k", account_id: "a")
+
+      assert {:ok, %{wire: :system_one}} =
+               Provider.resolve(provider: :compatible, url: "http://x", env: %{})
+    end
+
     test "compatible requires a url and accepts no key (self-hosted)" do
       assert {:ok, p} =
                Provider.resolve(

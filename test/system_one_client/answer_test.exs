@@ -35,6 +35,10 @@ defmodule SystemOneClient.AnswerTest do
              })
   end
 
+  test "parses a refusal" do
+    assert {:ok, %SystemOneClient.Answer.Refusal{}} = Answer.parse(%{"type" => "refusal"})
+  end
+
   test "rejects unknown types and missing fields" do
     assert {:error, {:unknown_answer_type, "bogus"}} = Answer.parse(%{"type" => "bogus"})
     assert {:error, {:malformed_answer, "choice"}} = Answer.parse(%{"type" => "choice"})

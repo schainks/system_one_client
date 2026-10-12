@@ -7,6 +7,7 @@ defmodule SystemOneClient.Provider do
   | `:typesafe` (default) | `https://api.typesafe.ai/v1/systemone` | `TYPESAFE_API_KEY` | `jev-latest` | top level |
   | `:cloudflare` | `.../accounts/{account_id}/ai/run/@cf/cloudflare/clef` | `CLOUDFLARE_API_TOKEN` | `@cf/cloudflare/clef` | `result` |
   | `:openrouter` | `https://openrouter.ai/api/alpha/decisions` | `OPENROUTER_API_KEY` | `typesafe/jev-1.13` | top level |
+  | `:openai` | `https://api.openai.com/v1/decisions` | `OPENAI_API_KEY` | `gpt-6-luna` | translated (see `SystemOneClient.Wire.OpenAIDecisions`) |
   | `:compatible` | `url:` (required) | optional | none | top level |
 
   `url:` and `model:` options always win over provider defaults. Keys come from `api_key:`
@@ -14,16 +15,19 @@ defmodule SystemOneClient.Provider do
   """
 
   @type envelope :: :top_level | :cloudflare_result
+  @type wire :: :system_one | :openai_decisions
   @type t :: %{
           provider: atom(),
           url: String.t(),
           auth: {:bearer, String.t()} | nil,
           model: String.t() | nil,
-          envelope: envelope()
+          envelope: envelope(),
+          wire: wire()
         }
 
   @typesafe_url "https://api.typesafe.ai/v1/systemone"
   @openrouter_url "https://openrouter.ai/api/alpha/decisions"
+  @openai_url "https://api.openai.com/v1/decisions"
   @cloudflare_base "https://api.cloudflare.com/client/v4/accounts"
 
   @spec resolve(keyword()) :: {:ok, t()} | {:error, term()}
@@ -70,6 +74,14 @@ defmodule SystemOneClient.Provider do
            )}
         end
 
+      :openai ->
+        with {:ok, k} <- require_key(key, env["OPENAI_API_KEY"]) do
+          {:ok,
+           opts
+           |> build(:openai, @openai_url, {:bearer, k}, "gpt-6-luna", :top_level)
+           |> Map.put(:wire, :openai_decisions)}
+        end
+
       :compatible ->
         with {:ok, url} <- required(Keyword.get(opts, :url), :missing_url) do
           auth = if is_binary(key) and key != "", do: {:bearer, key}, else: nil
@@ -99,7 +111,8 @@ defmodule SystemOneClient.Provider do
       url: Keyword.get(opts, :url, url),
       auth: auth,
       model: Keyword.get(opts, :model, model),
-      envelope: envelope
+      envelope: envelope,
+      wire: :system_one
     }
   end
 
