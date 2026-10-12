@@ -1,19 +1,27 @@
 # Changelog
 
-## 0.2.0 (unreleased)
+## 0.2.0 (2026-10-12)
+
+### Added
 
 - `provider: :openai` for OpenAI's Decisions API (`POST /v1/decisions`, default model
   `gpt-6-luna`, `OPENAI_API_KEY`). Requests and responses are translated to and from the
   System One shape by `SystemOneClient.Wire.OpenAIDecisions`, so questions and answer
-  structs are the same as for every other provider.
-- `SystemOneClient.Answer.Refusal` for questions the model declines to answer.
-- `SystemOneClient.Provider` results carry a `wire` field (`:system_one` or
-  `:openai_decisions`).
+  structs are the same as for every other provider. Score legends carry your own level
+  text, as with TypeSafe.
+- `SystemOneClient.Answer.Refusal` for a question the model declines to answer; the other
+  answers in the request are still returned.
 - Typespecs for the public API, including `t:SystemOneClient.option/0`,
   `t:SystemOneClient.options/0`, `t:SystemOneClient.error/0` and
   `t:SystemOneClient.Provider.name/0`; checked with Dialyzer in CI.
 - Doctests on `validate_questions/1`, `Answer.parse/1`, `Provider.resolve/1` and the
   OpenAI request encoder, and grouped modules in the docs.
+
+### Changed
+
+- `SystemOneClient.Provider` results carry a `wire` field (`:system_one` or
+  `:openai_decisions`).
+- The Hex package links to this changelog.
 
 ## 0.1.0 (2026-10-08)
 
