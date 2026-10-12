@@ -76,42 +76,35 @@ defmodule SystemOneClient.Wire.OpenAIDecisions do
 
   defp encode_question(name, q) when is_map(q) do
     type = q |> get(:type) |> to_string()
-    instructions = text(get(q, :instructions) || "")
-    criteria = get(q, :criteria)
-
-    case type do
-      "noul" ->
-        {:ok,
-         %{
-           type: "predicate",
-           name: name,
-           instructions: predicate_instructions(instructions, criteria)
-         }}
-
-      "choice" ->
-        case choices(criteria) do
-          [] ->
-            {:error, {:invalid_question, name, :missing_criteria}}
-
-          choices ->
-            {:ok, %{type: "choice", name: name, instructions: instructions, choices: choices}}
-        end
-
-      "score" ->
-        case levels(criteria) do
-          [] ->
-            {:error, {:invalid_question, name, :missing_criteria}}
-
-          levels ->
-            {:ok, %{type: "score", name: name, instructions: instructions, levels: levels}}
-        end
-
-      _ ->
-        {:error, {:invalid_question, name, :unknown_type}}
-    end
+    encode_typed(type, name, text(get(q, :instructions) || ""), get(q, :criteria))
   end
 
   defp encode_question(name, _q), do: {:error, {:invalid_question, name, :not_a_map}}
+
+  defp encode_typed("noul", name, instructions, criteria) do
+    {:ok,
+     %{
+       type: "predicate",
+       name: name,
+       instructions: predicate_instructions(instructions, criteria)
+     }}
+  end
+
+  defp encode_typed("choice", name, instructions, criteria) do
+    with {:ok, choices} <- non_empty(choices(criteria), name),
+         do: {:ok, %{type: "choice", name: name, instructions: instructions, choices: choices}}
+  end
+
+  defp encode_typed("score", name, instructions, criteria) do
+    with {:ok, levels} <- non_empty(levels(criteria), name),
+         do: {:ok, %{type: "score", name: name, instructions: instructions, levels: levels}}
+  end
+
+  defp encode_typed(_type, name, _instructions, _criteria),
+    do: {:error, {:invalid_question, name, :unknown_type}}
+
+  defp non_empty([], name), do: {:error, {:invalid_question, name, :missing_criteria}}
+  defp non_empty(list, _name), do: {:ok, list}
 
   defp predicate_instructions(instructions, criteria) when is_map(criteria) do
     true_when = get(criteria, true)

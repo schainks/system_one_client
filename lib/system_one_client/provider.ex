@@ -30,68 +30,65 @@ defmodule SystemOneClient.Provider do
   @openai_url "https://api.openai.com/v1/decisions"
   @cloudflare_base "https://api.cloudflare.com/client/v4/accounts"
 
+  # Hosted providers that differ only in endpoint, key variable, default model and wire.
+  @hosted %{
+    typesafe: %{
+      url: @typesafe_url,
+      key_env: "TYPESAFE_API_KEY",
+      model: "jev-latest",
+      wire: :system_one
+    },
+    openrouter: %{
+      url: @openrouter_url,
+      key_env: "OPENROUTER_API_KEY",
+      model: "typesafe/jev-1.13",
+      wire: :system_one
+    },
+    openai: %{
+      url: @openai_url,
+      key_env: "OPENAI_API_KEY",
+      model: "gpt-6-luna",
+      wire: :openai_decisions
+    }
+  }
+
   @spec resolve(keyword()) :: {:ok, t()} | {:error, term()}
   def resolve(opts) do
     env = Keyword.get(opts, :env) || System.get_env()
-    provider = Keyword.get(opts, :provider, :typesafe)
-    key = Keyword.get(opts, :api_key)
+    resolve(Keyword.get(opts, :provider, :typesafe), opts, env, Keyword.get(opts, :api_key))
+  end
 
-    case provider do
-      :typesafe ->
-        with {:ok, k} <- require_key(key, env["TYPESAFE_API_KEY"]) do
-          {:ok, build(opts, :typesafe, @typesafe_url, {:bearer, k}, "jev-latest", :top_level)}
-        end
+  defp resolve(provider, opts, env, key) when is_map_key(@hosted, provider) do
+    spec = Map.fetch!(@hosted, provider)
 
-      :openrouter ->
-        with {:ok, k} <- require_key(key, env["OPENROUTER_API_KEY"]) do
-          {:ok,
-           build(
-             opts,
-             :openrouter,
-             @openrouter_url,
-             {:bearer, k},
-             "typesafe/jev-1.13",
-             :top_level
-           )}
-        end
-
-      :cloudflare ->
-        account = Keyword.get(opts, :account_id) || env["CLOUDFLARE_ACCOUNT_ID"]
-        model = cloudflare_model(Keyword.get(opts, :model, "clef"))
-
-        with {:ok, k} <- require_key(key, env["CLOUDFLARE_API_TOKEN"]),
-             {:ok, acc} <- required(account, :missing_account_id) do
-          url = "#{@cloudflare_base}/#{acc}/ai/run/#{model}"
-
-          {:ok,
-           build(
-             Keyword.delete(opts, :model),
-             :cloudflare,
-             url,
-             {:bearer, k},
-             model,
-             :cloudflare_result
-           )}
-        end
-
-      :openai ->
-        with {:ok, k} <- require_key(key, env["OPENAI_API_KEY"]) do
-          {:ok,
-           opts
-           |> build(:openai, @openai_url, {:bearer, k}, "gpt-6-luna", :top_level)
-           |> Map.put(:wire, :openai_decisions)}
-        end
-
-      :compatible ->
-        with {:ok, url} <- required(Keyword.get(opts, :url), :missing_url) do
-          auth = if is_binary(key) and key != "", do: {:bearer, key}, else: nil
-          {:ok, build(opts, :compatible, url, auth, Keyword.get(opts, :model), :top_level)}
-        end
-
-      other ->
-        {:error, {:unknown_provider, other}}
+    with {:ok, k} <- require_key(key, env[spec.key_env]) do
+      {:ok,
+       opts
+       |> build(provider, spec.url, {:bearer, k}, spec.model, :top_level)
+       |> Map.put(:wire, spec.wire)}
     end
   end
+
+  defp resolve(:cloudflare, opts, env, key) do
+    account = Keyword.get(opts, :account_id) || env["CLOUDFLARE_ACCOUNT_ID"]
+    model = cloudflare_model(Keyword.get(opts, :model, "clef"))
+
+    with {:ok, k} <- require_key(key, env["CLOUDFLARE_API_TOKEN"]),
+         {:ok, acc} <- required(account, :missing_account_id) do
+      url = "#{@cloudflare_base}/#{acc}/ai/run/#{model}"
+      opts = Keyword.delete(opts, :model)
+      {:ok, build(opts, :cloudflare, url, {:bearer, k}, model, :cloudflare_result)}
+    end
+  end
+
+  defp resolve(:compatible, opts, _env, key) do
+    with {:ok, url} <- required(Keyword.get(opts, :url), :missing_url) do
+      auth = if is_binary(key) and key != "", do: {:bearer, key}, else: nil
+      {:ok, build(opts, :compatible, url, auth, Keyword.get(opts, :model), :top_level)}
+    end
+  end
+
+  defp resolve(other, _opts, _env, _key), do: {:error, {:unknown_provider, other}}
 
   @doc "Extracts the System One body from a provider's response envelope."
   @spec unwrap(envelope(), map()) :: {:ok, map()} | {:error, term()}

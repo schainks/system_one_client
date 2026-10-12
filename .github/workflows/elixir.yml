@@ -4,14 +4,13 @@ on:
   push:
     branches: [ "main" ]
   pull_request:
-    branches: [ "main" ]
 
 permissions:
   contents: read
 
 jobs:
-  build:
-    name: Build and test (Elixir ${{ matrix.elixir }}, OTP ${{ matrix.otp }})
+  test:
+    name: Test (Elixir ${{ matrix.elixir }}, OTP ${{ matrix.otp }})
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
@@ -19,29 +18,63 @@ jobs:
         include:
           - elixir: "1.18"   # floor from mix.exs (~> 1.18)
             otp: "27"
-          - elixir: "1.20"   # current; what run.sh uses locally
+          - elixir: "1.20"   # what scripts/run.sh uses locally
             otp: "28"
-            lint: true
+          - elixir: "1.20"   # latest
+            otp: "29"
     env:
       MIX_ENV: test
     steps:
       - uses: actions/checkout@v4
-      - name: Set up Elixir
-        uses: erlef/setup-beam@v1
+      - uses: erlef/setup-beam@v1
         with:
           elixir-version: ${{ matrix.elixir }}
           otp-version: ${{ matrix.otp }}
-      - name: Restore dependencies and build cache
-        uses: actions/cache@v4
+      - uses: actions/cache@v4
         with:
           path: |
             deps
             _build
-          key: ${{ runner.os }}-${{ matrix.otp }}-${{ matrix.elixir }}-mix-${{ hashFiles('**/mix.lock') }}
-          restore-keys: ${{ runner.os }}-${{ matrix.otp }}-${{ matrix.elixir }}-mix-
-      - run: mix deps.get
-      - name: Check formatting
-        if: matrix.lint
-        run: mix format --check-formatted
-      - run: mix compile --warnings-as-errors
+          key: ${{ runner.os }}-test-${{ matrix.otp }}-${{ matrix.elixir }}-${{ hashFiles('**/mix.lock') }}
+          restore-keys: ${{ runner.os }}-test-${{ matrix.otp }}-${{ matrix.elixir }}-
+      - run: mix deps.get --check-locked
       - run: mix test
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-24.04
+    env:
+      MIX_ENV: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: erlef/setup-beam@v1
+        with:
+          elixir-version: "1.20"
+          otp-version: "29"
+      - uses: actions/cache@v4
+        with:
+          path: |
+            deps
+            _build
+          key: ${{ runner.os }}-lint-${{ hashFiles('**/mix.lock') }}
+          restore-keys: ${{ runner.os }}-lint-
+      - run: mix deps.get --check-locked
+      - run: mix format --check-formatted
+      - run: mix deps.unlock --check-unused
+      - run: mix compile --warnings-as-errors
+      - run: mix credo --strict
+
+  docs:
+    name: Docs
+    runs-on: ubuntu-24.04
+    env:
+      MIX_ENV: docs
+    steps:
+      - uses: actions/checkout@v4
+      - uses: erlef/setup-beam@v1
+        with:
+          elixir-version: "1.20"
+          otp-version: "29"
+      - run: mix deps.get --check-locked
+      - run: mix docs --warnings-as-errors
+      - run: mix hex.build

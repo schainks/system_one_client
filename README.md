@@ -160,5 +160,5 @@ transformer that consumes this client live on
 
 ## Running the tests
 
-With Elixir installed: `mix test`. Without: `./run.sh test` runs them in the
+With Elixir installed: `mix test`. Without: `scripts/run.sh test` runs them in the
 `hexpm/elixir:1.20.4` Docker image.
