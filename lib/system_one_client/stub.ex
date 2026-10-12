@@ -4,6 +4,8 @@ defmodule SystemOneClient.Stub do
   alias SystemOneClient.Answer
 
   @impl true
+  @spec evaluate(term(), SystemOneClient.questions(), SystemOneClient.options()) ::
+          {:ok, SystemOneClient.answers(), SystemOneClient.meta()} | {:error, term()}
   def evaluate(state, questions, opts) do
     case Keyword.fetch!(opts, :answers) do
       fun when is_function(fun, 2) -> fun.(state, questions) |> normalize()

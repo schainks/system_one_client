@@ -44,6 +44,18 @@ defmodule SystemOneClient.Answer do
 
   @type t :: Choice.t() | Noul.t() | Score.t() | Refusal.t()
 
+  @doc """
+  Parses one raw API answer into its struct.
+
+      iex> SystemOneClient.Answer.parse(%{"type" => "noul", "noul" => 0.93})
+      {:ok, %SystemOneClient.Answer.Noul{noul: 0.93}}
+
+      iex> SystemOneClient.Answer.parse(%{"type" => "refusal"})
+      {:ok, %SystemOneClient.Answer.Refusal{}}
+
+      iex> SystemOneClient.Answer.parse(%{"type" => "choice"})
+      {:error, {:malformed_answer, "choice"}}
+  """
   @spec parse(map()) :: {:ok, t()} | {:error, term()}
   def parse(%{"type" => "choice", "choice" => c, "probabilities" => p, "confidence" => conf})
       when is_binary(c) and is_map(p) and is_number(conf) do
