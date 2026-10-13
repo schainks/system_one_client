@@ -328,6 +328,107 @@ defmodule SystemOneClient.HTTPTest do
              )
   end
 
+  @png "data:image/png;base64,YWJj"
+
+  test "cloudflare: images go in the top-level images array next to state" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+      req = Jason.decode!(body)
+      assert req["images"] == [@png]
+      assert req["state"] == "a product photo"
+
+      Req.Test.json(conn, %{
+        "success" => true,
+        "errors" => [],
+        "result" => %{"answers" => %{"q" => %{"type" => "noul", "noul" => 0.4}}}
+      })
+    end)
+
+    assert {:ok, %{"q" => %Noul{noul: 0.4}}, _} =
+             SystemOneClient.HTTP.evaluate("a product photo", @questions,
+               provider: :cloudflare,
+               account_id: "a",
+               api_key: "k",
+               images: [@png],
+               plug: {Req.Test, __MODULE__}
+             )
+  end
+
+  test "openai: images become input_image parts before the state text" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+      req = Jason.decode!(body)
+
+      assert [
+               %{
+                 "role" => "user",
+                 "content" => [
+                   %{"type" => "input_image", "image_url" => @png},
+                   %{"type" => "input_text"}
+                 ]
+               }
+             ] =
+               req["input"]
+
+      Req.Test.json(conn, %{
+        "answers" => [%{"type" => "predicate", "name" => "q", "probability" => 0.9}]
+      })
+    end)
+
+    assert {:ok, %{"q" => %Noul{noul: 0.9}}, _} =
+             SystemOneClient.HTTP.evaluate("s", @questions,
+               provider: :openai,
+               api_key: "k",
+               images: [@png],
+               plug: {Req.Test, __MODULE__}
+             )
+  end
+
+  test "images are rejected before any request for providers without image support" do
+    Req.Test.stub(__MODULE__, fn _conn -> flunk("must not send") end)
+
+    assert {:error, {:unsupported_option, :images, :typesafe}} =
+             SystemOneClient.HTTP.evaluate("s", @questions, Keyword.put(@opts, :images, [@png]))
+
+    assert {:error, {:invalid_image, 0, :not_a_data_url}} =
+             SystemOneClient.HTTP.evaluate("s", @questions,
+               provider: :openai,
+               api_key: "k",
+               images: ["https://example.com/a.png"],
+               plug: {Req.Test, __MODULE__}
+             )
+  end
+
+  test "telemetry reports the image count, never image data" do
+    ref = make_ref()
+    parent = self()
+
+    :telemetry.attach(
+      {__MODULE__, ref},
+      [:system_one_client, :request, :start],
+      fn _e, _m, md, _ -> send(parent, {ref, md}) end,
+      nil
+    )
+
+    on_exit(fn -> :telemetry.detach({__MODULE__, ref}) end)
+
+    Req.Test.stub(__MODULE__, fn conn ->
+      Req.Test.json(conn, %{
+        "answers" => [%{"type" => "predicate", "name" => "q", "probability" => 0.9}]
+      })
+    end)
+
+    SystemOneClient.HTTP.evaluate("s", @questions,
+      provider: :openai,
+      api_key: "k",
+      images: [@png, @png],
+      plug: {Req.Test, __MODULE__}
+    )
+
+    assert_receive {^ref, %{image_count: 2} = md}
+    refute inspect(md) =~ "base64"
+  end
+
   test "surfaces malformed answers" do
     Req.Test.stub(__MODULE__, fn conn ->
       Req.Test.json(conn, %{"answers" => %{"q" => %{"type" => "choice"}}})

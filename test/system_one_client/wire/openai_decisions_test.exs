@@ -138,6 +138,35 @@ defmodule SystemOneClient.Wire.OpenAIDecisionsTest do
                )
     end
 
+    test "with images, input becomes one user message: images first, then the state as text" do
+      png = "data:image/png;base64,YWJj"
+      questions = %{"damage" => %{"type" => "noul", "instructions" => "Visible damage?"}}
+
+      assert {:ok, body} =
+               Wire.encode_request(%{order: 7}, questions, "gpt-6-luna", [png, png])
+
+      assert body.input == [
+               %{
+                 role: "user",
+                 content: [
+                   %{type: "input_image", image_url: png},
+                   %{type: "input_image", image_url: png},
+                   %{type: "input_text", text: ~s({"order":7})}
+                 ]
+               }
+             ]
+    end
+
+    test "without images, input stays plain text" do
+      assert {:ok, %{input: "hi"}} =
+               Wire.encode_request(
+                 "hi",
+                 %{"a" => %{"type" => "noul", "instructions" => "?"}},
+                 "m",
+                 []
+               )
+    end
+
     test "omits model when nil" do
       assert {:ok, body} =
                Wire.encode_request("x", %{"a" => %{"type" => "noul", "instructions" => "?"}}, nil)

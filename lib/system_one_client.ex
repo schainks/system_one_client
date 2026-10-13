@@ -49,6 +49,7 @@ defmodule SystemOneClient do
           | {:plug, term()}
           | {:env, %{optional(String.t()) => String.t()}}
           | {:answers, map() | (term(), questions() -> map() | {:error, term()})}
+          | {:images, [String.t()]}
 
   @type options :: [option()]
 
@@ -64,6 +65,7 @@ defmodule SystemOneClient do
           | {:malformed_answers, term()}
           | {:malformed_envelope, term()}
           | {:provider_error, list()}
+          | SystemOneClient.Images.error()
 
   @callback evaluate(state :: term(), questions :: questions(), opts :: options()) ::
               {:ok, answers(), meta()} | {:error, term()}
@@ -82,6 +84,21 @@ defmodule SystemOneClient do
 
     client.evaluate(state, questions, opts)
   end
+
+  @doc """
+  Builds a base64 data URL for the `images:` option from image bytes.
+
+      iex> SystemOneClient.image_data_url("abc", "image/png")
+      "data:image/png;base64,YWJj"
+
+  Raises `ArgumentError` if `media_type` is not an `image/*` type.
+  """
+  @spec image_data_url(binary(), String.t()) :: String.t()
+  def image_data_url(bytes, "image/" <> _ = media_type) when is_binary(bytes),
+    do: "data:#{media_type};base64," <> Base.encode64(bytes)
+
+  def image_data_url(_bytes, media_type),
+    do: raise(ArgumentError, "expected an image/* media type, got: #{inspect(media_type)}")
 
   @doc """
   Checks every question has a known `type`. Ids may be atoms or strings.
