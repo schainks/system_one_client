@@ -10,10 +10,11 @@ defmodule SystemOneClient.Images do
   | --- | --- | --- |
   | `:openai` | any `image/*` data URL | none documented |
   | `:cloudflare` | PNG, JPEG, WebP | at most 4 images, 4 MiB each and 8 MiB in total, decoded |
+  | `:gemini` | PNG, JPEG, WebP, HEIC, HEIF, GIF, BMP, TIFF | 100 MiB in total, decoded |
   | others | no | returns `{:error, {:unsupported_option, :images, provider}}` |
 
-  Remote `http(s)` image URLs are rejected for every provider because neither API
-  accepts them.
+  Remote `http(s)` image URLs are rejected for every provider. OpenAI and Clef do not
+  accept them; Gemini does, but this option does not pass them through yet.
   """
 
   @data_url ~r/\Adata:(image\/[a-zA-Z0-9.+-]+);base64,(.*)\z/s
@@ -21,6 +22,8 @@ defmodule SystemOneClient.Images do
   @clef_max_images 4
   @clef_max_bytes 4 * 1024 * 1024
   @clef_max_total 8 * 1024 * 1024
+  @gemini_types ~w(image/png image/jpeg image/webp image/heic image/heif image/gif image/bmp image/tiff)
+  @gemini_max_total 100 * 1024 * 1024
 
   @type error ::
           :images_not_a_list
@@ -44,7 +47,7 @@ defmodule SystemOneClient.Images do
   def validate([], _provider), do: :ok
   def validate(images, _provider) when not is_list(images), do: {:error, :images_not_a_list}
 
-  def validate(images, provider) when provider in [:openai, :cloudflare] do
+  def validate(images, provider) when provider in [:openai, :cloudflare, :gemini] do
     with {:ok, parsed} <- parse_all(images) do
       limits(provider, parsed)
     end
@@ -84,8 +87,24 @@ defmodule SystemOneClient.Images do
 
   defp limits(:openai, _parsed), do: :ok
 
+  defp limits(:gemini, parsed) do
+    total = total_bytes(parsed)
+
+    cond do
+      bad = Enum.find(parsed, fn {_i, type, _} -> type not in @gemini_types end) ->
+        {i, type, _} = bad
+        {:error, {:invalid_image, i, {:unsupported_type, type}}}
+
+      total > @gemini_max_total ->
+        {:error, {:images_too_large, total, @gemini_max_total}}
+
+      true ->
+        :ok
+    end
+  end
+
   defp limits(:cloudflare, parsed) do
-    total = parsed |> Enum.map(fn {_i, _type, size} -> size end) |> Enum.sum()
+    total = total_bytes(parsed)
 
     cond do
       length(parsed) > @clef_max_images ->
@@ -105,4 +124,6 @@ defmodule SystemOneClient.Images do
         :ok
     end
   end
+
+  defp total_bytes(parsed), do: parsed |> Enum.map(fn {_i, _type, size} -> size end) |> Enum.sum()
 end

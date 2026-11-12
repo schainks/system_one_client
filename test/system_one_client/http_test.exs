@@ -384,6 +384,143 @@ defmodule SystemOneClient.HTTPTest do
              )
   end
 
+  test "gemini provider: x-goog-api-key auth, translated request, answers parsed as is" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.request_path == "/v1beta/decisions"
+      assert ["g-test"] = Plug.Conn.get_req_header(conn, "x-goog-api-key")
+      assert [] = Plug.Conn.get_req_header(conn, "authorization")
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+      req = Jason.decode!(body)
+      assert req["model"] == "gemini-decision-1"
+      assert req["input"] == ~s({"text":"I was charged twice."})
+      refute Map.has_key?(req, "state")
+
+      assert req["questions"]["damaged"] == %{
+               "type" => "noul",
+               "instructions" => "Did the item arrive damaged?",
+               "criteria" => %{"true_description" => "Broken", "false_description" => "Fine"}
+             }
+
+      assert req["questions"]["dept"]["criteria"] == %{"billing" => "Payments", "other" => ""}
+      assert req["questions"]["sev"]["criteria"] == ["Minor", "Major"]
+
+      Req.Test.json(conn, %{
+        "answers" => %{
+          "damaged" => %{"type" => "noul", "noul" => 0.03, "confidence" => 0.97},
+          "dept" => %{
+            "type" => "choice",
+            "choice" => "billing",
+            "probabilities" => %{"billing" => 0.99, "other" => 0.01},
+            "confidence" => 0.99
+          },
+          "sev" => %{
+            "type" => "score",
+            "score" => 0.85,
+            "legend" => %{"0" => "Minor", "1" => "Major"},
+            "probabilities" => %{"0" => 0.15, "1" => 0.85},
+            "confidence" => 0.85
+          }
+        },
+        "usage" => %{
+          "total_input_tokens" => 324,
+          "input_tokens_by_modality" => [%{"modality" => "text", "tokens" => 324}],
+          "total_output_tokens" => 0,
+          "total_tokens" => 324
+        }
+      })
+    end)
+
+    questions = %{
+      "dept" => %{
+        "type" => "choice",
+        "instructions" => "Which department?",
+        "criteria" => %{"billing" => "Payments", "other" => nil}
+      },
+      "sev" => %{
+        "type" => "score",
+        "instructions" => "How bad?",
+        "criteria" => ["Minor", "Major"]
+      },
+      damaged: %{
+        type: "noul",
+        instructions: "Did the item arrive damaged?",
+        criteria: %{true => "Broken", false => "Fine"}
+      }
+    }
+
+    assert {:ok, answers, meta} =
+             SystemOneClient.HTTP.evaluate(%{text: "I was charged twice."}, questions,
+               provider: :gemini,
+               api_key: "g-test",
+               plug: {Req.Test, __MODULE__}
+             )
+
+    assert %Noul{noul: 0.03} = answers["damaged"]
+
+    assert %SystemOneClient.Answer.Choice{choice: "billing", confidence: 0.99} = answers["dept"]
+
+    assert %SystemOneClient.Answer.Score{score: 0.85, legend: %{"1" => "Major"}} = answers["sev"]
+    assert meta.provider == :gemini
+    assert meta.model == "gemini-decision-1"
+    assert meta.usage["total_input_tokens"] == 324
+  end
+
+  test "gemini: images become image blocks before the state text" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+      "data:image/png;base64," <> data = @png
+
+      assert [
+               %{"type" => "image", "data" => ^data, "mime_type" => "image/png"},
+               %{"type" => "text", "text" => "s"}
+             ] = Jason.decode!(body)["input"]
+
+      Req.Test.json(conn, %{"answers" => %{"q" => %{"type" => "noul", "noul" => 0.9}}})
+    end)
+
+    assert {:ok, %{"q" => %Noul{noul: 0.9}}, _} =
+             SystemOneClient.HTTP.evaluate("s", @questions,
+               provider: :gemini,
+               api_key: "k",
+               images: [@png],
+               plug: {Req.Test, __MODULE__}
+             )
+  end
+
+  test "gemini: a safety block is an http 400 with the error body, and is not retried" do
+    {:ok, counter} = Agent.start_link(fn -> 0 end)
+
+    Req.Test.stub(__MODULE__, fn conn ->
+      Agent.update(counter, &(&1 + 1))
+
+      conn
+      |> Plug.Conn.put_status(400)
+      |> Req.Test.json(%{"error" => %{"code" => "safety", "message" => "blocked"}})
+    end)
+
+    assert {:error, {:http, 400, %{"error" => %{"code" => "safety"}}}} =
+             SystemOneClient.HTTP.evaluate("s", @questions,
+               provider: :gemini,
+               api_key: "k",
+               plug: {Req.Test, __MODULE__}
+             )
+
+    assert Agent.get(counter, & &1) == 1
+  end
+
+  test "gemini: a choice or score without criteria is rejected before any request" do
+    Req.Test.stub(__MODULE__, fn _conn -> flunk("must not send") end)
+
+    assert {:error, {:invalid_question, "c", :missing_criteria}} =
+             SystemOneClient.HTTP.evaluate(
+               "s",
+               %{"c" => %{"type" => "choice", "instructions" => "?"}},
+               provider: :gemini,
+               api_key: "k",
+               plug: {Req.Test, __MODULE__}
+             )
+  end
+
   test "images are rejected before any request for providers without image support" do
     Req.Test.stub(__MODULE__, fn _conn -> flunk("must not send") end)
 

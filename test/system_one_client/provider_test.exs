@@ -63,6 +63,20 @@ defmodule SystemOneClient.ProviderTest do
       assert {:error, :missing_api_key} = Provider.resolve(provider: :openai, env: %{})
     end
 
+    test "gemini decisions endpoint, its default model, and the x-goog-api-key header" do
+      assert {:ok, p} = Provider.resolve(provider: :gemini, api_key: "g")
+      assert p.url == "https://generativelanguage.googleapis.com/v1beta/decisions"
+      assert p.model == "gemini-decision-1"
+      assert p.auth == {:header, "x-goog-api-key", "g"}
+      assert p.wire == :gemini_decisions
+      assert p.envelope == :top_level
+
+      assert {:ok, %{auth: {:header, "x-goog-api-key", "envkey"}}} =
+               Provider.resolve(provider: :gemini, env: %{"GEMINI_API_KEY" => "envkey"})
+
+      assert {:error, :missing_api_key} = Provider.resolve(provider: :gemini, env: %{})
+    end
+
     test "every other provider uses the system one wire format" do
       for provider <- [:typesafe, :openrouter] do
         assert {:ok, %{wire: :system_one}} = Provider.resolve(provider: provider, api_key: "k")

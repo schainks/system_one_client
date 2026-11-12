@@ -8,19 +8,21 @@ defmodule SystemOneClient.Provider do
   | `:cloudflare` | `.../accounts/{account_id}/ai/run/@cf/cloudflare/clef` | `CLOUDFLARE_API_TOKEN` | `@cf/cloudflare/clef` | `result` |
   | `:openrouter` | `https://openrouter.ai/api/alpha/decisions` | `OPENROUTER_API_KEY` | `typesafe/jev-1.13` | top level |
   | `:openai` | `https://api.openai.com/v1/decisions` | `OPENAI_API_KEY` | `gpt-6-luna` | translated (see `SystemOneClient.Wire.OpenAIDecisions`) |
+  | `:gemini` | `https://generativelanguage.googleapis.com/v1beta/decisions` | `GEMINI_API_KEY`, sent as `x-goog-api-key` | `gemini-decision-1` | top level (request translated, see `SystemOneClient.Wire.GeminiDecisions`) |
   | `:compatible` | `url:` (required) | optional | none | top level |
 
   `url:` and `model:` options always win over provider defaults. Keys come from `api_key:`
   or the provider's environment variable; `env:` can replace the environment in tests.
   """
 
-  @type name :: :typesafe | :cloudflare | :openai | :openrouter | :compatible
+  @type name :: :typesafe | :cloudflare | :openai | :openrouter | :gemini | :compatible
   @type envelope :: :top_level | :cloudflare_result
-  @type wire :: :system_one | :openai_decisions
+  @type wire :: :system_one | :openai_decisions | :gemini_decisions
+  @type auth :: {:bearer, String.t()} | {:header, String.t(), String.t()}
   @type t :: %{
           provider: name(),
           url: String.t(),
-          auth: {:bearer, String.t()} | nil,
+          auth: auth() | nil,
           model: String.t() | nil,
           envelope: envelope(),
           wire: wire()
@@ -29,6 +31,7 @@ defmodule SystemOneClient.Provider do
   @typesafe_url "https://api.typesafe.ai/v1/systemone"
   @openrouter_url "https://openrouter.ai/api/alpha/decisions"
   @openai_url "https://api.openai.com/v1/decisions"
+  @gemini_url "https://generativelanguage.googleapis.com/v1beta/decisions"
   @cloudflare_base "https://api.cloudflare.com/client/v4/accounts"
 
   # Hosted providers that differ only in endpoint, key variable, default model and wire.
@@ -50,6 +53,13 @@ defmodule SystemOneClient.Provider do
       key_env: "OPENAI_API_KEY",
       model: "gpt-6-luna",
       wire: :openai_decisions
+    },
+    gemini: %{
+      url: @gemini_url,
+      key_env: "GEMINI_API_KEY",
+      model: "gemini-decision-1",
+      wire: :gemini_decisions,
+      auth_header: "x-goog-api-key"
     }
   }
 
@@ -62,6 +72,10 @@ defmodule SystemOneClient.Provider do
 
       iex> SystemOneClient.Provider.resolve(provider: :typesafe, env: %{})
       {:error, :missing_api_key}
+
+      iex> {:ok, p} = SystemOneClient.Provider.resolve(provider: :gemini, api_key: "g-test")
+      iex> {p.model, p.wire, p.auth}
+      {"gemini-decision-1", :gemini_decisions, {:header, "x-goog-api-key", "g-test"}}
   """
   @spec resolve(SystemOneClient.options()) ::
           {:ok, t()}
@@ -76,9 +90,11 @@ defmodule SystemOneClient.Provider do
     spec = Map.fetch!(@hosted, provider)
 
     with {:ok, k} <- require_key(key, env[spec.key_env]) do
+      auth = if header = spec[:auth_header], do: {:header, header, k}, else: {:bearer, k}
+
       {:ok,
        opts
-       |> build(provider, spec.url, {:bearer, k}, spec.model, :top_level)
+       |> build(provider, spec.url, auth, spec.model, :top_level)
        |> Map.put(:wire, spec.wire)}
     end
   end

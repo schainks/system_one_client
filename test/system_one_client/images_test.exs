@@ -50,6 +50,13 @@ defmodule SystemOneClient.ImagesTest do
       assert :ok = Images.validate([@png, @gif], :openai)
     end
 
+    test "gemini accepts its documented image types and rejects others" do
+      assert :ok = Images.validate([@png, @gif], :gemini)
+
+      assert {:error, {:invalid_image, 1, {:unsupported_type, "image/svg+xml"}}} =
+               Images.validate([@png, "data:image/svg+xml;base64,YWJj"], :gemini)
+    end
+
     test "cloudflare enforces Clef's documented limits" do
       assert :ok = Images.validate([@png, @png, @png, @png], :cloudflare)
 
