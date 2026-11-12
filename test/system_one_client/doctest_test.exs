@@ -6,4 +6,5 @@ defmodule SystemOneClient.DoctestTest do
   doctest SystemOneClient.Images
   doctest SystemOneClient.Provider
   doctest SystemOneClient.Wire.OpenAIDecisions
+  doctest SystemOneClient.Wire.GeminiDecisions
 end

@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.4.0 (2026-11-12)
+
+### Added
+
+- `provider: :gemini` for Google's Gemini Decisions API (`POST /v1beta/decisions`, default
+  model `gemini-decision-1`, `GEMINI_API_KEY` sent as `x-goog-api-key`). Requests are
+  reshaped by `SystemOneClient.Wire.GeminiDecisions`; answers already match the System One
+  shape, so questions and answer structs are the same as for every other provider.
+- `images:` works with `provider: :gemini`: PNG, JPEG, WebP, HEIC, HEIF, GIF, BMP and TIFF
+  data URLs, up to 100 MiB in total, sent as `image` blocks before the state.
+
+### Changed
+
+- `SystemOneClient.Provider` results can carry `auth: {:header, name, value}` as well as
+  `{:bearer, key}`, and `wire: :gemini_decisions`.
+
 ## 0.3.0 (2026-10-13)
 
 ### Added

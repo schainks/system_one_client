@@ -3,6 +3,7 @@
 Elixir client for System One decision models: [TypeSafe Jev](https://docs.typesafe.ai),
 [Cloudflare Clef](https://developers.cloudflare.com/workers-ai/models/clef/),
 [OpenAI's Decisions API](https://developers.openai.com/api/docs/guides/decisions),
+[Google's Gemini Decisions API](https://aistudio.google.com/docs/decisions-api),
 [OpenRouter's decisions endpoint](https://openrouter.ai), and anything self-hosted that
 speaks the `/v1/systemone` wire format (for example [CLM](https://github.com/Contrastive-LM/CLM)).
 
@@ -12,7 +13,7 @@ router or a gate needs: top-k over a Choice, a threshold on a Noul, a level cut 
 
 - One behaviour, `SystemOneClient`, with `evaluate(state, questions, opts)`.
 - `SystemOneClient.HTTP` for real calls; `SystemOneClient.Stub` for tests, no network.
-- Five providers behind one option; `url:` and `model:` override any of them.
+- Six providers behind one option; `url:` and `model:` override any of them.
 - Retries on 429, 529, 502, 503, 504 and transport errors, honouring `Retry-After`.
 - Never raises for network conditions; tagged error tuples at the boundary.
 - Telemetry without leaking state, questions, or keys.
@@ -22,7 +23,7 @@ router or a gate needs: top-k over a Choice, a threshold on a Noul, a level cut 
 
 ```elixir
 def deps do
-  [{:system_one_client, "~> 0.1"}]
+  [{:system_one_client, "~> 0.4"}]
 end
 ```
 
@@ -70,11 +71,13 @@ and `score`.
 | `:cloudflare` | `https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/run/@cf/cloudflare/clef` | `api_key:` or `CLOUDFLARE_API_TOKEN`; `account_id:` or `CLOUDFLARE_ACCOUNT_ID` | `clef` (`model: "clef-flash"` for the 9B) |
 | `:openai` | `https://api.openai.com/v1/decisions` | `api_key:` or `OPENAI_API_KEY` | `gpt-6-luna` |
 | `:openrouter` | `https://openrouter.ai/api/alpha/decisions` | `api_key:` or `OPENROUTER_API_KEY` | `typesafe/jev-1.13` |
+| `:gemini` | `https://generativelanguage.googleapis.com/v1beta/decisions` | `api_key:` or `GEMINI_API_KEY` | `gemini-decision-1` |
 | `:compatible` | `url:` (required) | optional | none |
 
 ```elixir
 SystemOneClient.evaluate(state, questions, provider: :cloudflare, model: "clef-flash")
 SystemOneClient.evaluate(state, questions, provider: :openai)
+SystemOneClient.evaluate(state, questions, provider: :gemini)
 SystemOneClient.evaluate(state, questions, provider: :compatible, url: "http://localhost:8700/v1/systemone")
 ```
 
@@ -101,9 +104,32 @@ same questions and get the same structs back:
   `{:error, {:invalid_question, id, :missing_criteria}}`.
 - For regional processing, pass `url: "https://us.api.openai.com/v1/decisions"` (or `eu.`).
 
+### Gemini Decisions
+
+Google's Gemini Decisions API uses nearly the System One format, so `provider: :gemini`
+only reshapes the request; answers are parsed as they arrive.
+
+- The key is sent in the `x-goog-api-key` header, not as a bearer token.
+- `state` becomes the text `input`: strings pass through, anything else is JSON-encoded.
+  Non-string instructions and descriptions are JSON-encoded too. Gemini rejects an empty
+  input with a 400.
+- `noul` criteria `true` / `false` are sent as `true_description` / `false_description`.
+- A `choice` or `score` question without criteria is rejected before the request, as
+  `{:error, {:invalid_question, id, :missing_criteria}}`.
+- `score` is the probability-weighted average of the level indices (0 up to the highest
+  index), the same as OpenAI.
+- `meta.usage` is Gemini's own shape: `total_input_tokens`, `input_tokens_by_modality`,
+  `total_output_tokens` (always 0) and `total_tokens`.
+- Gemini sorts choice options by key and breaks exact ties towards the first key, so a
+  catch-all option does not stay last; do not rely on option order.
+- A safety block comes back as `{:error, {:http, 400, %{"error" => %{"code" => "safety", ...}}}}`.
+- Server-side limits: 1 to 1,000 questions per request, question ids matching
+  `[A-Za-z0-9_-]+` up to 64 characters, and 2 to 255 options or levels per question.
+
 ## Images
 
-OpenAI's Decisions API and Cloudflare's Clef can judge images as well as text. Pass them
+OpenAI's Decisions API, Gemini's Decisions API and Cloudflare's Clef can judge images as
+well as text. Pass them
 as base64 data URLs in the `images:` option; `SystemOneClient.image_data_url/2` builds one
 from bytes:
 
@@ -118,14 +144,16 @@ SystemOneClient.evaluate(
 )
 ```
 
-Both providers see the images first and then the state. For OpenAI the client builds a
-user message with `input_image` parts followed by the state as text; for Clef it sends the
-top-level `images` array.
+All three see the images first and then the state. For OpenAI the client builds a user
+message with `input_image` parts followed by the state as text; for Gemini it sends
+`image` blocks followed by a `text` block; for Clef it sends the top-level `images` array.
 
 Images are checked before any request:
 
 - Every entry must be a `data:image/...;base64,` URL. Remote `http(s)` URLs are rejected,
-  since neither API accepts them.
+  OpenAI and Clef do not accept them; Gemini does, but this option does not pass them
+  through yet.
+- Gemini takes PNG, JPEG, WebP, HEIC, HEIF, GIF, BMP and TIFF, up to 100 MiB in total.
 - Clef allows at most 4 PNG, JPEG or WebP images, 4 MiB each and 8 MiB in total once decoded.
 - Providers without image support (`:typesafe`, `:openrouter`, `:compatible`) return
   `{:error, {:unsupported_option, :images, provider}}` rather than dropping them.
@@ -142,7 +170,7 @@ Images are checked before any request:
 | `client` | app env `:client`, else `HTTP` | implementation module (use `SystemOneClient.Stub` in tests) |
 | `plug` | none | Req plug, for `Req.Test` in your own tests |
 | `env` | `System.get_env()` | replace the environment (tests) |
-| `images` | none | base64 image data URLs (`:openai`, `:cloudflare`); see [Images](#images) |
+| `images` | none | base64 image data URLs (`:openai`, `:gemini`, `:cloudflare`); see [Images](#images) |
 
 Errors are tagged tuples:
 

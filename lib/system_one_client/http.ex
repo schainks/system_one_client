@@ -15,7 +15,7 @@ defmodule SystemOneClient.HTTP do
   @behaviour SystemOneClient
 
   alias SystemOneClient.{Answer, Provider}
-  alias SystemOneClient.Wire.OpenAIDecisions
+  alias SystemOneClient.Wire.{GeminiDecisions, OpenAIDecisions}
 
   @retry_statuses [429, 529, 502, 503, 504]
 
@@ -64,6 +64,9 @@ defmodule SystemOneClient.HTTP do
 
   defp encode(%{wire: :openai_decisions, model: model}, state, questions, images),
     do: OpenAIDecisions.encode_request(state, questions, model, images)
+
+  defp encode(%{wire: :gemini_decisions, model: model}, state, questions, images),
+    do: GeminiDecisions.encode_request(state, questions, model, images)
 
   # Clef takes images as a top-level array next to state (its extension to System One).
   defp encode(p, state, questions, images) do
@@ -176,6 +179,7 @@ defmodule SystemOneClient.HTTP do
   defp maybe_put(map, key, value), do: Map.put(map, key, value)
 
   defp maybe_auth(req, nil), do: req
+  defp maybe_auth(req, {:header, name, value}), do: Req.Request.put_header(req, name, value)
   defp maybe_auth(req, auth), do: Req.merge(req, auth: auth)
 
   defp maybe_plug(req, nil), do: req
