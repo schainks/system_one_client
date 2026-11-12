@@ -11,10 +11,11 @@ defmodule SystemOneClient.Images do
   | `:openai` | any `image/*` data URL | none documented |
   | `:cloudflare` | PNG, JPEG, WebP | at most 4 images, 4 MiB each and 8 MiB in total, decoded |
   | `:gemini` | PNG, JPEG, WebP, HEIC, HEIF, GIF, BMP, TIFF | 100 MiB in total, decoded |
+  | `:flide` | any `image/*` data URL | none; they depend on the model served |
   | others | no | returns `{:error, {:unsupported_option, :images, provider}}` |
 
-  Remote `http(s)` image URLs are rejected for every provider. OpenAI and Clef do not
-  accept them; Gemini does, but this option does not pass them through yet.
+  Remote `http(s)` image URLs are rejected for every provider. OpenAI, Clef and Flide do
+  not accept them; Gemini does, but this option does not pass them through yet.
   """
 
   @data_url ~r/\Adata:(image\/[a-zA-Z0-9.+-]+);base64,(.*)\z/s
@@ -47,7 +48,7 @@ defmodule SystemOneClient.Images do
   def validate([], _provider), do: :ok
   def validate(images, _provider) when not is_list(images), do: {:error, :images_not_a_list}
 
-  def validate(images, provider) when provider in [:openai, :cloudflare, :gemini] do
+  def validate(images, provider) when provider in [:openai, :cloudflare, :gemini, :flide] do
     with {:ok, parsed} <- parse_all(images) do
       limits(provider, parsed)
     end
@@ -85,7 +86,7 @@ defmodule SystemOneClient.Images do
 
   defp parse(_image), do: {:error, :not_a_data_url}
 
-  defp limits(:openai, _parsed), do: :ok
+  defp limits(provider, _parsed) when provider in [:openai, :flide], do: :ok
 
   defp limits(:gemini, parsed) do
     total = total_bytes(parsed)

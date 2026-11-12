@@ -9,13 +9,14 @@ defmodule SystemOneClient.Provider do
   | `:openrouter` | `https://openrouter.ai/api/alpha/decisions` | `OPENROUTER_API_KEY` | `typesafe/jev-1.13` | top level |
   | `:openai` | `https://api.openai.com/v1/decisions` | `OPENAI_API_KEY` | `gpt-6-luna` | translated (see `SystemOneClient.Wire.OpenAIDecisions`) |
   | `:gemini` | `https://generativelanguage.googleapis.com/v1beta/decisions` | `GEMINI_API_KEY`, sent as `x-goog-api-key` | `gemini-decision-1` | top level (request translated, see `SystemOneClient.Wire.GeminiDecisions`) |
+  | `:flide` | `http://localhost:8000/v1/systemone` | optional | none (the server's own) | top level |
   | `:compatible` | `url:` (required) | optional | none | top level |
 
   `url:` and `model:` options always win over provider defaults. Keys come from `api_key:`
   or the provider's environment variable; `env:` can replace the environment in tests.
   """
 
-  @type name :: :typesafe | :cloudflare | :openai | :openrouter | :gemini | :compatible
+  @type name :: :typesafe | :cloudflare | :openai | :openrouter | :gemini | :flide | :compatible
   @type envelope :: :top_level | :cloudflare_result
   @type wire :: :system_one | :openai_decisions | :gemini_decisions
   @type auth :: {:bearer, String.t()} | {:header, String.t(), String.t()}
@@ -32,6 +33,7 @@ defmodule SystemOneClient.Provider do
   @openrouter_url "https://openrouter.ai/api/alpha/decisions"
   @openai_url "https://api.openai.com/v1/decisions"
   @gemini_url "https://generativelanguage.googleapis.com/v1beta/decisions"
+  @flide_url "http://localhost:8000/v1/systemone"
   @cloudflare_base "https://api.cloudflare.com/client/v4/accounts"
 
   # Hosted providers that differ only in endpoint, key variable, default model and wire.
@@ -111,10 +113,13 @@ defmodule SystemOneClient.Provider do
     end
   end
 
+  # A Flide server has no auth of its own and serves one model, so both are optional.
+  defp resolve(:flide, opts, _env, key),
+    do: {:ok, build(opts, :flide, @flide_url, optional_bearer(key), nil, :top_level)}
+
   defp resolve(:compatible, opts, _env, key) do
     with {:ok, url} <- required(Keyword.get(opts, :url), :missing_url) do
-      auth = if is_binary(key) and key != "", do: {:bearer, key}, else: nil
-      {:ok, build(opts, :compatible, url, auth, Keyword.get(opts, :model), :top_level)}
+      {:ok, build(opts, :compatible, url, optional_bearer(key), nil, :top_level)}
     end
   end
 
@@ -145,6 +150,9 @@ defmodule SystemOneClient.Provider do
 
   defp cloudflare_model("@cf/" <> _ = full), do: full
   defp cloudflare_model(short) when is_binary(short), do: "@cf/cloudflare/#{short}"
+
+  defp optional_bearer(key) when is_binary(key) and key != "", do: {:bearer, key}
+  defp optional_bearer(_key), do: nil
 
   defp require_key(explicit, from_env) do
     case explicit || from_env do

@@ -1,7 +1,7 @@
 defmodule SystemOneClient do
   @moduledoc """
   Client for System One decision models: TypeSafe Jev, Cloudflare Clef, OpenAI's Decisions
-  API, Google's Gemini Decisions API, OpenRouter's decisions endpoint, and any self-hosted `/v1/systemone` server such as CLM.
+  API, Google's Gemini Decisions API, OpenRouter's decisions endpoint, and any self-hosted `/v1/systemone` server such as Flide or CLM.
 
   Ask typed questions (`noul`, `choice`, `score`) about arbitrary JSON state and get
   typed answers back with their full probability distributions. `SystemOneClient.HTTP`

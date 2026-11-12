@@ -521,6 +521,38 @@ defmodule SystemOneClient.HTTPTest do
              )
   end
 
+  test "flide provider: local url, no auth, no model, images next to state" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.host == "localhost"
+      assert conn.port == 8000
+      assert conn.request_path == "/v1/systemone"
+      assert [] = Plug.Conn.get_req_header(conn, "authorization")
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+      req = Jason.decode!(body)
+      assert req["state"] == "s"
+      assert req["images"] == [@png]
+      assert %{"q" => %{"type" => "noul"}} = req["questions"]
+      refute Map.has_key?(req, "model")
+
+      Req.Test.json(conn, %{
+        "model" => "OmniJev/OneJev1.6-0.8B",
+        "usage" => %{"input_tokens" => 12, "output_tokens" => 0},
+        "answers" => %{"q" => %{"type" => "noul", "noul" => 0.7}}
+      })
+    end)
+
+    assert {:ok, %{"q" => %Noul{noul: 0.7}}, meta} =
+             SystemOneClient.HTTP.evaluate("s", @questions,
+               provider: :flide,
+               images: [@png],
+               env: %{},
+               plug: {Req.Test, __MODULE__}
+             )
+
+    assert meta.provider == :flide
+    assert meta.model == "OmniJev/OneJev1.6-0.8B"
+  end
+
   test "images are rejected before any request for providers without image support" do
     Req.Test.stub(__MODULE__, fn _conn -> flunk("must not send") end)
 
