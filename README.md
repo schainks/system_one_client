@@ -73,7 +73,7 @@ and `score`.
 | `:openai` | `https://api.openai.com/v1/decisions` | `api_key:` or `OPENAI_API_KEY` | `gpt-6-luna` |
 | `:openrouter` | `https://openrouter.ai/api/alpha/decisions` | `api_key:` or `OPENROUTER_API_KEY` | `typesafe/jev-1.13` |
 | `:gemini` | `https://generativelanguage.googleapis.com/v1beta/decisions` | `api_key:` or `GEMINI_API_KEY` | `gemini-decision-1` |
-| `:flide` | `http://localhost:8000/v1/systemone` (override with `url:`) | optional `api_key:` | the model the server runs |
+| `:flide` | `url:` or `FLIDE_URL`, else `http://localhost:8000/v1/systemone` | optional: `api_key:` or `FLIDE_API_KEY` | the model the server runs |
 | `:compatible` | `url:` (required) | optional | none |
 
 ```elixir
@@ -113,13 +113,13 @@ same questions and get the same structs back:
 models (`flide serve --model ...`). It speaks the System One format, so nothing is
 translated:
 
-- The default URL is Flide's own, `http://localhost:8000/v1/systemone`; pass `url:` for
-  another host.
+- The default URL is Flide's own, `http://localhost:8000/v1/systemone`; pass `url:` or set
+  `FLIDE_URL` for another host. The option wins over the variable.
 - A server runs one model, so no `model` is sent unless you pass `model:`. If you do, it
   must be the served model's name or one of its aliases, or Flide answers 404.
   `meta.model` is the name the server reports.
-- Flide has no authentication of its own. `api_key:` is sent as a bearer token if you put
-  it behind a proxy that wants one.
+- Flide has no authentication of its own. `api_key:` or `FLIDE_API_KEY` is sent as a
+  bearer token if you put it behind a proxy that wants one.
 - `images:` is supported, for servers running a model that reads images.
 - Validation errors come back as `{:error, {:http, 422, %{"detail" => [...]}}}`.
 

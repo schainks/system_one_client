@@ -9,7 +9,7 @@ defmodule SystemOneClient.Provider do
   | `:openrouter` | `https://openrouter.ai/api/alpha/decisions` | `OPENROUTER_API_KEY` | `typesafe/jev-1.13` | top level |
   | `:openai` | `https://api.openai.com/v1/decisions` | `OPENAI_API_KEY` | `gpt-6-luna` | translated (see `SystemOneClient.Wire.OpenAIDecisions`) |
   | `:gemini` | `https://generativelanguage.googleapis.com/v1beta/decisions` | `GEMINI_API_KEY`, sent as `x-goog-api-key` | `gemini-decision-1` | top level (request translated, see `SystemOneClient.Wire.GeminiDecisions`) |
-  | `:flide` | `http://localhost:8000/v1/systemone` | optional | none (the server's own) | top level |
+  | `:flide` | `FLIDE_URL`, else `http://localhost:8000/v1/systemone` | optional `FLIDE_API_KEY` | none (the server's own) | top level |
   | `:compatible` | `url:` (required) | optional | none | top level |
 
   `url:` and `model:` options always win over provider defaults. Keys come from `api_key:`
@@ -114,8 +114,11 @@ defmodule SystemOneClient.Provider do
   end
 
   # A Flide server has no auth of its own and serves one model, so both are optional.
-  defp resolve(:flide, opts, _env, key),
-    do: {:ok, build(opts, :flide, @flide_url, optional_bearer(key), nil, :top_level)}
+  defp resolve(:flide, opts, env, key) do
+    url = present(env["FLIDE_URL"]) || @flide_url
+    auth = optional_bearer(key || env["FLIDE_API_KEY"])
+    {:ok, build(opts, :flide, url, auth, nil, :top_level)}
+  end
 
   defp resolve(:compatible, opts, _env, key) do
     with {:ok, url} <- required(Keyword.get(opts, :url), :missing_url) do
@@ -150,6 +153,9 @@ defmodule SystemOneClient.Provider do
 
   defp cloudflare_model("@cf/" <> _ = full), do: full
   defp cloudflare_model(short) when is_binary(short), do: "@cf/cloudflare/#{short}"
+
+  defp present(value) when is_binary(value) and value != "", do: value
+  defp present(_value), do: nil
 
   defp optional_bearer(key) when is_binary(key) and key != "", do: {:bearer, key}
   defp optional_bearer(_key), do: nil
