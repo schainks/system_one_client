@@ -46,8 +46,12 @@ defmodule SystemOneClient.ImagesTest do
       assert {:error, :images_not_a_list} = Images.validate(@png, :openai)
     end
 
-    test "openai accepts any image type" do
+    test "openai and flide accept any image type" do
       assert :ok = Images.validate([@png, @gif], :openai)
+      assert :ok = Images.validate([@png, @gif], :flide)
+
+      assert {:error, {:invalid_image, 0, :not_a_data_url}} =
+               Images.validate(["https://example.com/a.png"], :flide)
     end
 
     test "gemini accepts its documented image types and rejects others" do

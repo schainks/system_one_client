@@ -89,6 +89,45 @@ defmodule SystemOneClient.ProviderTest do
                Provider.resolve(provider: :compatible, url: "http://x", env: %{})
     end
 
+    test "flide defaults to its local server, with no key and no model required" do
+      assert {:ok, p} = Provider.resolve(provider: :flide, env: %{})
+      assert p.provider == :flide
+      assert p.url == "http://localhost:8000/v1/systemone"
+      assert p.auth == nil
+      assert p.model == nil
+      assert p.wire == :system_one
+      assert p.envelope == :top_level
+
+      assert {:ok, %{url: "http://gpu:9000/v1/systemone", auth: {:bearer, "k"}, model: "m"}} =
+               Provider.resolve(
+                 provider: :flide,
+                 url: "http://gpu:9000/v1/systemone",
+                 api_key: "k",
+                 model: "m"
+               )
+    end
+
+    test "flide reads FLIDE_URL and FLIDE_API_KEY, and explicit options win over them" do
+      env = %{"FLIDE_URL" => "http://env-host:8000/v1/systemone", "FLIDE_API_KEY" => "envkey"}
+
+      assert {:ok, %{url: "http://env-host:8000/v1/systemone", auth: {:bearer, "envkey"}}} =
+               Provider.resolve(provider: :flide, env: env)
+
+      assert {:ok, %{url: "http://opt-host/v1/systemone", auth: {:bearer, "optkey"}}} =
+               Provider.resolve(
+                 provider: :flide,
+                 env: env,
+                 url: "http://opt-host/v1/systemone",
+                 api_key: "optkey"
+               )
+
+      assert {:ok, %{url: "http://localhost:8000/v1/systemone", auth: nil}} =
+               Provider.resolve(
+                 provider: :flide,
+                 env: %{"FLIDE_URL" => "", "FLIDE_API_KEY" => ""}
+               )
+    end
+
     test "compatible requires a url and accepts no key (self-hosted)" do
       assert {:ok, p} =
                Provider.resolve(

@@ -68,7 +68,7 @@ defmodule SystemOneClient.HTTP do
   defp encode(%{wire: :gemini_decisions, model: model}, state, questions, images),
     do: GeminiDecisions.encode_request(state, questions, model, images)
 
-  # Clef takes images as a top-level array next to state (its extension to System One).
+  # Clef and Flide take images as a top-level array next to state (an extension to System One).
   defp encode(p, state, questions, images) do
     body =
       %{state: state, questions: questions}

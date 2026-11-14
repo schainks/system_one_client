@@ -4,8 +4,9 @@ Elixir client for System One decision models: [TypeSafe Jev](https://docs.typesa
 [Cloudflare Clef](https://developers.cloudflare.com/workers-ai/models/clef/),
 [OpenAI's Decisions API](https://developers.openai.com/api/docs/guides/decisions),
 [Google's Gemini Decisions API](https://aistudio.google.com/docs/decisions-api),
-[OpenRouter's decisions endpoint](https://openrouter.ai), and anything self-hosted that
-speaks the `/v1/systemone` wire format (for example [CLM](https://github.com/Contrastive-LM/CLM)).
+[OpenRouter's decisions endpoint](https://openrouter.ai), self-hosted
+[Flide](https://github.com/OmniJev/flide) servers, and anything else that speaks the
+`/v1/systemone` wire format (for example [CLM](https://github.com/Contrastive-LM/CLM)).
 
 You send a `state` (any JSON) and a map of typed questions; you get back typed answers with
 their **full probability distributions**, never collapsed to a single pick. That is what a
@@ -13,7 +14,7 @@ router or a gate needs: top-k over a Choice, a threshold on a Noul, a level cut 
 
 - One behaviour, `SystemOneClient`, with `evaluate(state, questions, opts)`.
 - `SystemOneClient.HTTP` for real calls; `SystemOneClient.Stub` for tests, no network.
-- Six providers behind one option; `url:` and `model:` override any of them.
+- Seven providers behind one option; `url:` and `model:` override any of them.
 - Retries on 429, 529, 502, 503, 504 and transport errors, honouring `Retry-After`.
 - Never raises for network conditions; tagged error tuples at the boundary.
 - Telemetry without leaking state, questions, or keys.
@@ -72,12 +73,14 @@ and `score`.
 | `:openai` | `https://api.openai.com/v1/decisions` | `api_key:` or `OPENAI_API_KEY` | `gpt-6-luna` |
 | `:openrouter` | `https://openrouter.ai/api/alpha/decisions` | `api_key:` or `OPENROUTER_API_KEY` | `typesafe/jev-1.13` |
 | `:gemini` | `https://generativelanguage.googleapis.com/v1beta/decisions` | `api_key:` or `GEMINI_API_KEY` | `gemini-decision-1` |
+| `:flide` | `url:` or `FLIDE_URL`, else `http://localhost:8000/v1/systemone` | optional: `api_key:` or `FLIDE_API_KEY` | the model the server runs |
 | `:compatible` | `url:` (required) | optional | none |
 
 ```elixir
 SystemOneClient.evaluate(state, questions, provider: :cloudflare, model: "clef-flash")
 SystemOneClient.evaluate(state, questions, provider: :openai)
 SystemOneClient.evaluate(state, questions, provider: :gemini)
+SystemOneClient.evaluate(state, questions, provider: :flide, url: "http://gpu-box:8000/v1/systemone")
 SystemOneClient.evaluate(state, questions, provider: :compatible, url: "http://localhost:8700/v1/systemone")
 ```
 
@@ -104,6 +107,22 @@ same questions and get the same structs back:
   `{:error, {:invalid_question, id, :missing_criteria}}`.
 - For regional processing, pass `url: "https://us.api.openai.com/v1/decisions"` (or `eu.`).
 
+### Flide
+
+[Flide](https://github.com/OmniJev/flide) is a self-hosted inference server for decision
+models (`flide serve --model ...`). It speaks the System One format, so nothing is
+translated:
+
+- The default URL is Flide's own, `http://localhost:8000/v1/systemone`; pass `url:` or set
+  `FLIDE_URL` for another host. The option wins over the variable.
+- A server runs one model, so no `model` is sent unless you pass `model:`. If you do, it
+  must be the served model's name or one of its aliases, or Flide answers 404.
+  `meta.model` is the name the server reports.
+- Flide has no authentication of its own. `api_key:` or `FLIDE_API_KEY` is sent as a
+  bearer token if you put it behind a proxy that wants one.
+- `images:` is supported, for servers running a model that reads images.
+- Validation errors come back as `{:error, {:http, 422, %{"detail" => [...]}}}`.
+
 ### Gemini Decisions
 
 Google's Gemini Decisions API uses nearly the System One format, so `provider: :gemini`
@@ -128,8 +147,8 @@ only reshapes the request; answers are parsed as they arrive.
 
 ## Images
 
-OpenAI's Decisions API, Gemini's Decisions API and Cloudflare's Clef can judge images as
-well as text. Pass them
+OpenAI's Decisions API, Gemini's Decisions API, Cloudflare's Clef and Flide servers
+running a vision model can judge images as well as text. Pass them
 as base64 data URLs in the `images:` option; `SystemOneClient.image_data_url/2` builds one
 from bytes:
 
@@ -144,16 +163,19 @@ SystemOneClient.evaluate(
 )
 ```
 
-All three see the images first and then the state. For OpenAI the client builds a user
+All of them see the images first and then the state. For OpenAI the client builds a user
 message with `input_image` parts followed by the state as text; for Gemini it sends
-`image` blocks followed by a `text` block; for Clef it sends the top-level `images` array.
+`image` blocks followed by a `text` block; for Clef and Flide it sends the top-level
+`images` array.
 
 Images are checked before any request:
 
 - Every entry must be a `data:image/...;base64,` URL. Remote `http(s)` URLs are rejected,
-  OpenAI and Clef do not accept them; Gemini does, but this option does not pass them
+  OpenAI, Clef and Flide do not accept them; Gemini does, but this option does not pass them
   through yet.
 - Gemini takes PNG, JPEG, WebP, HEIC, HEIF, GIF, BMP and TIFF, up to 100 MiB in total.
+- Flide has no local checks beyond the data URL format; what it accepts depends on the
+  model it serves.
 - Clef allows at most 4 PNG, JPEG or WebP images, 4 MiB each and 8 MiB in total once decoded.
 - Providers without image support (`:typesafe`, `:openrouter`, `:compatible`) return
   `{:error, {:unsupported_option, :images, provider}}` rather than dropping them.
@@ -170,7 +192,7 @@ Images are checked before any request:
 | `client` | app env `:client`, else `HTTP` | implementation module (use `SystemOneClient.Stub` in tests) |
 | `plug` | none | Req plug, for `Req.Test` in your own tests |
 | `env` | `System.get_env()` | replace the environment (tests) |
-| `images` | none | base64 image data URLs (`:openai`, `:gemini`, `:cloudflare`); see [Images](#images) |
+| `images` | none | base64 image data URLs (`:openai`, `:gemini`, `:cloudflare`, `:flide`); see [Images](#images) |
 
 Errors are tagged tuples:
 

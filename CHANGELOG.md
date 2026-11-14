@@ -10,6 +10,10 @@
   shape, so questions and answer structs are the same as for every other provider.
 - `images:` works with `provider: :gemini`: PNG, JPEG, WebP, HEIC, HEIF, GIF, BMP and TIFF
   data URLs, up to 100 MiB in total, sent as `image` blocks before the state.
+- `provider: :flide` for self-hosted [Flide](https://github.com/OmniJev/flide) servers:
+  URL from `url:` or `FLIDE_URL` (default `http://localhost:8000/v1/systemone`), optional
+  key from `api_key:` or `FLIDE_API_KEY`, no default model, and `images:` passed as the
+  top-level `images` array.
 
 ### Changed
 
