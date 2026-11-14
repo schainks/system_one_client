@@ -243,3 +243,9 @@ transformer that consumes this client live on
 
 With Elixir installed: `mix test`. Without: `scripts/run.sh test` runs them in the
 `hexpm/elixir:1.20.4` Docker image.
+
+## Contributing
+
+Bug fixes, new providers and docs improvements are welcome. See
+[CONTRIBUTING.md](https://github.com/schainks/system_one_client/blob/main/CONTRIBUTING.md)
+for setup, the checks CI runs, and how to add a provider.
