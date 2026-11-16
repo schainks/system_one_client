@@ -85,3 +85,51 @@ jobs:
       - run: mix deps.get --check-locked
       - run: mix docs --warnings-as-errors
       - run: mix hex.build
+
+  # Runs only on Dependabot pull requests, and only after every check above has passed.
+  # Lights-off updates are squash-merged; everything else is labelled for a human.
+  #   Lights-off: GitHub Actions bumps (CI itself exercises them), and patch or minor
+  #               bumps where every updated package is a direct dev/test dependency.
+  #   Review:     runtime dependencies, transitive dependencies, and major versions.
+  dependabot:
+    name: Dependabot triage
+    needs: [test, lint, docs]
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.user.login == 'dependabot[bot]' &&
+      github.repository == 'schainks/system_one_client'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PR_URL: ${{ github.event.pull_request.html_url }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+    steps:
+      - id: meta
+        uses: dependabot/fetch-metadata@v3
+      - id: decide
+        name: Classify the update
+        env:
+          DEPS: ${{ steps.meta.outputs.updated-dependencies-json }}
+          UPDATE: ${{ steps.meta.outputs.update-type }}
+          ECOSYSTEM: ${{ steps.meta.outputs.package-ecosystem }}
+        run: |
+          lights_off=false
+          if [ "$ECOSYSTEM" = "github_actions" ]; then
+            lights_off=true
+          elif [ "$UPDATE" = "version-update:semver-patch" ] || [ "$UPDATE" = "version-update:semver-minor" ]; then
+            if printf '%s' "$DEPS" | jq -e 'length > 0 and all(.[]; .dependencyType == "direct:development")' > /dev/null; then
+              lights_off=true
+            fi
+          fi
+          echo "lights_off=$lights_off" >> "$GITHUB_OUTPUT"
+          echo "ecosystem=$ECOSYSTEM update=$UPDATE lights_off=$lights_off" >> "$GITHUB_STEP_SUMMARY"
+      - name: Merge lights-off update
+        if: steps.decide.outputs.lights_off == 'true'
+        run: gh pr merge "$PR_URL" --squash --match-head-commit "$HEAD_SHA"
+      - name: Label for review
+        if: steps.decide.outputs.lights_off != 'true'
+        run: gh api "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/labels" -f "labels[]=needs-review"

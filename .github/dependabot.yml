@@ -1,12 +1,16 @@
 version: 2
 updates:
+  # Dev tools and runtime dependencies arrive as separate pull requests, because the
+  # "Dependabot triage" job in elixir.yml merges the first kind without a human.
   - package-ecosystem: mix
     directory: "/"
     schedule:
       interval: weekly
     groups:
-      mix-deps:
-        patterns: ["*"]
+      dev-deps:
+        dependency-type: development
+      runtime-deps:
+        dependency-type: production
   - package-ecosystem: github-actions
     directory: "/"
     schedule:
