@@ -197,7 +197,9 @@ Write entries for someone who uses the library: what they can now do, or what ch
 for them.
 
 Maintainers cut releases. A release is a `chore: release X.Y.Z` pull request that dates
-the changelog heading, followed by a `vX.Y.Z` tag, `mix hex.publish` and a GitHub release.
+the changelog heading, followed by a `vX.Y.Z` tag on the merge commit. Pushing the tag
+runs the Release workflow, which checks the tag against `mix.exs` and the changelog, runs
+the tests, publishes to Hex and creates the GitHub release from the changelog section.
 
 ## Security
 

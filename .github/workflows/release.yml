@@ -1,0 +1,50 @@
+name: Release
+
+# Pushing a vX.Y.Z tag publishes that version to Hex and creates the GitHub release.
+# A person decides when to release by pushing the tag; this workflow does the mechanics.
+#
+# The job runs in the "release" environment, which holds HEX_API_KEY. Add yourself as a
+# required reviewer on that environment and each publish waits for your approval.
+on:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+"]
+
+permissions:
+  contents: read
+
+concurrency: release
+
+jobs:
+  publish:
+    name: Publish to Hex
+    if: github.repository == 'schainks/system_one_client'
+    runs-on: ubuntu-24.04
+    environment: release
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: erlef/setup-beam@v1
+        with:
+          elixir-version: "1.20"
+          otp-version: "29"
+      - name: Check the tag matches mix.exs and the changelog
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          mix_version="$(sed -n 's/^ *@version "\(.*\)"$/\1/p' mix.exs)"
+          if [ "$version" != "$mix_version" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match mix.exs version $mix_version" >&2
+            exit 1
+          fi
+          bash .github/scripts/release_notes.sh "$version" > "$RUNNER_TEMP/notes.md"
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+      - run: mix deps.get --check-locked
+      - run: mix test
+      - name: Publish package and docs
+        run: mix hex.publish --yes
+        env:
+          HEX_API_KEY: ${{ secrets.HEX_API_KEY }}
+      - name: Create the GitHub release
+        run: gh release create "$GITHUB_REF_NAME" --verify-tag --title "$GITHUB_REF_NAME" --notes-file "$RUNNER_TEMP/notes.md"
+        env:
+          GH_TOKEN: ${{ github.token }}
