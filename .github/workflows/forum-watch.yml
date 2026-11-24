@@ -1,0 +1,36 @@
+name: Forum watch
+
+# Opens an issue for each new Elixir Forum post about the library that a maintainer did
+# not write. See .github/scripts/forum_watch.sh. No AI and no secrets.
+on:
+  schedule:
+    - cron: "17 7 * * *"
+  workflow_dispatch:
+    inputs:
+      since_days:
+        description: Look back this many days
+        default: "14"
+      dry_run:
+        description: Print what would be opened without creating issues
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  watch:
+    name: Watch Elixir Forum
+    if: github.repository == 'schainks/system_one_client'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v7
+      - run: bash .github/scripts/forum_watch.sh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          IGNORE_USERS: schainks
+          SINCE_DAYS: ${{ inputs.since_days || '14' }}
+          DRY_RUN: ${{ inputs.dry_run || 'false' }}
