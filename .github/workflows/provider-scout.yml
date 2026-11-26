@@ -8,7 +8,8 @@ name: Provider scout
 # Everything it reads from the web is untrusted, so this job cannot push code, and the
 # only writes it can make are `gh issue create` calls in this repository.
 #
-# Needs the ANTHROPIC_API_KEY secret.
+# Runs on the maintainer's Claude subscription: needs the CLAUDE_CODE_OAUTH_TOKEN secret
+# (from `claude setup-token`, valid one year).
 on:
   schedule:
     - cron: "23 8 * * 1"
@@ -41,7 +42,7 @@ jobs:
           gh label create provider-request --color 0e8a16 --description "A provider or model the library should support" --force
       - uses: anthropics/claude-code-action@v1
         with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github_token: ${{ github.token }}
           prompt: |
             You are scouting for providers that ${{ github.repository }} should support.

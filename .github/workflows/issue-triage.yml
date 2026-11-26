@@ -5,7 +5,8 @@ name: Issue triage
 # this job can only read the repository, and can only label and comment on the one
 # issue that triggered it.
 #
-# Needs the ANTHROPIC_API_KEY secret.
+# Runs on the maintainer's Claude subscription: needs the CLAUDE_CODE_OAUTH_TOKEN secret
+# (from `claude setup-token`, valid one year).
 on:
   issues:
     types: [opened]
@@ -33,7 +34,7 @@ jobs:
         run: gh label create provider-request --color 0e8a16 --description "A provider or model the library should support" --force
       - uses: anthropics/claude-code-action@v1
         with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github_token: ${{ github.token }}
           allowed_non_write_users: "*"
           prompt: |
